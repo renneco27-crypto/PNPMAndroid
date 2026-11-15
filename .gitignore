@@ -1,0 +1,38 @@
+# Node & Package Managers
+node_modules/
+.pnpm/
+.pnp*
+.yarn/
+
+# Build & Next.js
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+next-env.d.ts
+
+# Backups & Temp
+*backup*/
+*.bak*
+*.tmp
+scratch/
+
+# Android & Keystores
+*.apk
+*.aab
+*.keystore
+*.jks
+keystore.properties
+.gradle/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Environment
+.env*.local
+
+# System
+.DS_Store
+Thumbs.db
