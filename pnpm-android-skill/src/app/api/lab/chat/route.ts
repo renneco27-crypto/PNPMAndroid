@@ -8,14 +8,15 @@ import {
   MAX_CHARS_PER_5_HOURS,
 } from '@/lib/aiCharRateLimiter'
 import { resolveRequestUser } from '@/lib/supabaseServer'
+import { routeLearningGraph } from '@/lib/learningGraphRouter'
 
 // Strict context & memory character limits:
 // Memory is strictly restricted to ONLY the topic and the AI's last reply.
 const MAX_TOPIC_CHARS = 120
-const MAX_LAST_REPLY_CHARS = 350
-const MAX_USER_PROMPT_CHARS = 350
-const MAX_TOTAL_MEMORY_CHARS = 600
-const MAX_REPLY_OUTPUT_CHARS = 650
+const MAX_LAST_REPLY_CHARS = 450
+const MAX_USER_PROMPT_CHARS = 500
+const MAX_TOTAL_MEMORY_CHARS = 900
+const MAX_REPLY_OUTPUT_CHARS = 2600
 
 const MessageSchema = z.object({
   role: z.enum(['user', 'assistant']),
@@ -31,8 +32,10 @@ function stripJsonBleed(input: string): string {
   if (!input) return ''
   let text = input.trim()
 
-  // Remove markdown code fence wrappers if the entire reply was wrapped in ```json ... ```
-  text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
+  // Remove outer ```json ... ``` wrapper ONLY if the entire string is wrapped in ```json { ... } ```
+  if (/^```json\s*\{/i.test(text)) {
+    text = text.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim()
+  }
 
   // Strip leading {"reply": "..." wrapper if present
   text = text.replace(/^\{\s*"reply"\s*:\s*"/i, '')
@@ -145,9 +148,9 @@ function parseLabAiResponse(raw: string, fallbackTopic: string) {
 }
 
 const ScreenContextSchema = z.object({
-  screen: z.enum(['math', 'code', 'gallery', 'enumeration']),
+  screen: z.enum(['math', 'code', 'gallery', 'enumeration', 'notes']),
   topic: z.string().default('General Topic'),
-  activeTab: z.string().optional(), // 'solver' | 'notebook' | 'ide' | 'gallery'
+  activeTab: z.string().optional(), // 'solver' | 'notebook' | 'ide' | 'gallery' | 'notes'
   mode: z.string().optional(), // 'scenario' | 'bug_hunter' | 'practice'
   problem: z.string().optional(),
   problemBreakdown: z
@@ -183,7 +186,7 @@ const ScreenContextSchema = z.object({
 }).optional()
 
 const RequestSchema = z.object({
-  kind: z.enum(['math', 'code', 'gallery', 'enumeration']),
+  kind: z.enum(['math', 'code', 'gallery', 'enumeration', 'notes']),
   deckId: z.string().min(1),
   notes: z
     .array(
@@ -205,15 +208,17 @@ const RequestSchema = z.object({
 })
 
 function buildSystemPrompt(
-  kind: 'math' | 'code' | 'gallery' | 'enumeration',
+  kind: 'math' | 'code' | 'gallery' | 'enumeration' | 'notes',
   ctx?: z.infer<typeof ScreenContextSchema>,
-  lastReplyMemory?: string
-): string {
+  lastReplyMemory?: string,
+  userMessage?: string
+): { systemPrompt: string; activeNodeBadges: string[]; domainId: string } {
   const safeTopic = (ctx?.topic || 'General Topic').slice(0, MAX_TOPIC_CHARS)
   const safeLastReply = lastReplyMemory ? stripJsonBleed(lastReplyMemory).slice(0, MAX_LAST_REPLY_CHARS) : ''
 
   if (kind === 'enumeration') {
-    return `You are a concise Study Tutor defining terms for study flashcards and quizzes.
+    return {
+      systemPrompt: `You are a concise Study Tutor defining terms for study flashcards and quizzes.
 Active Context:
 - Topic / Heading: "${safeTopic}"
 
@@ -227,11 +232,15 @@ STRICT RULES:
   "problem": null,
   "evaluation": null,
   "suggestedActions": []
-}`
+}`,
+      activeNodeBadges: [],
+      domainId: 'DOMAIN_EXAM_CLASSROOM_PREP',
+    }
   }
 
   if (kind === 'gallery') {
-    return `You are a concise Visual Study & Diagram Tutor connected to the student's Gallery.
+    return {
+      systemPrompt: `You are a concise Visual Study & Diagram Tutor connected to the student's Gallery.
 Active Context (Strict Memory - Topic & Last Reply Only):
 - Topic: "${safeTopic}"
 ${ctx?.problem ? `- Active Notes: ${ctx.problem.slice(0, 220)}` : ''}
@@ -249,8 +258,51 @@ STRICT OUTPUT RULES:
     { "label": "Give me images", "action": "Give me images from notes" },
     { "label": "Explain key diagram", "action": "Explain the main visual concept in my notes" }
   ]
-}`
+}`,
+      activeNodeBadges: [],
+      domainId: 'DOMAIN_EXAM_CLASSROOM_PREP',
+    }
   }
+
+  // Route through the 33-Node, 45-Edge 3D Personal Learning Graph Engine (v3.0)
+  const routed = routeLearningGraph({
+    screen: kind,
+    topic: safeTopic,
+    userMessage: userMessage || '',
+    contextText: [ctx?.problem || '', ctx?.solutionSteps || '', ctx?.keyTakeaway || ''].join(' '),
+  })
+
+  if (kind === 'notes') {
+    return {
+      systemPrompt: `You are the student's Personal 3D Learning Graph Tutor for Study Notes.
+Active Context:
+- Note Card Topic: "${safeTopic}"
+${ctx?.problem ? `- Current Note Content: ${ctx.problem.slice(0, 700)}` : ''}
+${ctx?.keyTakeaway ? `- Verbatim / Key Takeaway: ${ctx.keyTakeaway.slice(0, 350)}` : ''}
+${safeLastReply ? `- Your Last Reply: "${safeLastReply}"` : ''}
+
+${routed.compiledPromptAddendum}
+
+STRICT JSON OUTPUT RULES:
+1. Keep "reply" under 280 words (max 2200 characters). Zero conversational filler.
+2. Format Markdown tables and 2-branch ASCII diagrams cleanly inside "reply" (use \\n for newlines inside JSON strings).
+3. NEVER include raw JSON keys ("problem", "evaluation", "suggestedActions") inside the "reply" text.
+4. Return valid JSON ONLY matching this schema:
+{
+  "reply": "3D Learning Graph explanation (< 280 words) following the active traversal order and ending with 1 real-world stress test question.",
+  "problem": null,
+  "evaluation": null,
+  "suggestedActions": [
+    { "label": "2-Branch ASCII + Table", "action": "Draw a 2-Branch ASCII flow diagram and 3-column mechanical table for this note" },
+    { "label": "Zero-Skip Plug-In", "action": "Plug in concrete numbers (n=1, 2, 3) with zero skipped steps" },
+    { "label": "Hacker Stress Test", "action": "Give me a real-world production failure or exploit scenario for this concept" }
+  ]
+}`,
+      activeNodeBadges: routed.activeNodeBadges,
+      domainId: routed.activeDomains[0] || 'DOMAIN_EXAM_CLASSROOM_PREP',
+    }
+  }
+
   if (kind === 'math') {
     const bd = ctx?.problemBreakdown
     const breakdownLines: string[] = []
@@ -259,39 +311,57 @@ STRICT OUTPUT RULES:
     if (bd?.formula_master) breakdownLines.push(`  Master Formula: ${bd.formula_master.slice(0, 120)}`)
     if (bd?.formula_working) breakdownLines.push(`  Working Formula: ${bd.formula_working.slice(0, 120)}`)
 
-    return `You are a concise, conversational Math & Physics tutor.
-Active Context (Strict Memory - Topic & Last Reply Only):
+    return {
+      systemPrompt: `You are the student's Personal 3D Learning Graph Tutor for Math, Calculus & Physics.
+Active Context:
 - Topic Heading: "${safeTopic}"
-${breakdownLines.length > 0 ? `- Problem Breakdown:\n${breakdownLines.join('\n')}` : ctx?.problem ? `- Problem: ${ctx.problem.slice(0, 220)}` : ''}
-${ctx?.activeStepLatex ? `- Focused Step: ${ctx.activeStepLatex.slice(0, 120)} (${(ctx.activeStepExplanation || '').slice(0, 120)})` : ''}
+${breakdownLines.length > 0 ? `- Problem Breakdown:\n${breakdownLines.join('\n')}` : ctx?.problem ? `- Problem: ${ctx.problem.slice(0, 260)}` : ''}
+${ctx?.solutionSteps ? `- Card Solution Steps:\n${ctx.solutionSteps.slice(0, 800)}` : ''}
+${ctx?.answer ? `- Target Final Answer: ${ctx.answer.slice(0, 120)}` : ''}
+${ctx?.activeStepLatex ? `- Focused Step: ${ctx.activeStepLatex.slice(0, 140)} (${(ctx.activeStepExplanation || '').slice(0, 140)})` : ''}
 ${safeLastReply ? `- Your Last Reply: "${safeLastReply}"` : ''}
 
-EXPLANATION & LENGTH RULES (CRITICAL):
-1. STRICT LENGTH CAP: Keep "reply" concise and focused—under 95 words (max 550 characters). Do NOT write long essays.
-2. STRUCTURED STEP-BY-STEP BREAKDOWN:
-   - Use 2 to 3 short numbered steps with bold headers and bullet points ("• ").
-   - Enclose formulas in inline LaTeX $...$ and double-escape all backslashes in JSON strings (e.g. "\\\\Delta x = \\\\frac{b-a}{n}").
-3. NEVER include raw JSON keys ("problem", "evaluation", "suggestedActions") or code blocks inside the "reply" text.
-4. End "reply" with one short follow-up question.
+${routed.compiledPromptAddendum}
+
+CALCULUS & STEP-BY-STEP INTEGRATION RULES (CRITICAL):
+- When the student asks HOW to solve, how to integrate, or asks for the steps of a problem:
+  DO NOT give high-level philosophical talk about "how it is used in the notes" or "what breaks without it".
+  You MUST teach them the concrete, zero-skip calculus mechanics step-by-step:
+  1. STATE THE INTEGRATION RULE: e.g. Power Rule for Integrals $\\int x^n\\,dx = \\frac{x^{n+1}}{n+1} + C$.
+  2. SET UP INTEGRAL WITH BOUNDS: e.g. $M = \\int_0^{2.0} 3.0x\\,dx$.
+  3. FACTOR CONSTANTS: e.g. $M = 3.0 \\int_0^{2.0} x\\,dx$.
+  4. FIND ANTIDERIVATIVE IN BRACKETS: e.g. $M = 3.0 \\left[ \\frac{x^2}{2} \\right]_0^{2.0} = 1.5 \\left[ x^2 \\right]_0^{2.0}$.
+  5. EVALUATE BOUNDS (UPPER MINUS LOWER): e.g. $M = 1.5 \\left( (2.0)^2 - (0)^2 \\right) = 1.5(4.0 - 0) = 6.0\\text{ kg}$.
+  6. EXPLAIN WHY: Clearly explain what happened to the dx, how the power increased by 1, and why we divide by the new power.
+
+EXPLANATION & JSON OUTPUT RULES (CRITICAL):
+1. STRICT LENGTH CAP: Keep "reply" under 280 words (max 2200 characters). Zero conversational filler.
+2. Enclose math formulas in inline LaTeX $...$ and double-escape backslashes in JSON strings (e.g. "\\\\Delta x = \\\\frac{b-a}{n}").
+3. Show zero-skip arithmetic plug-ins (n = 1, 2, 3) and action-noun nicknames ("Ceiling Line", "Floor Line", "Slot Calculator").
+4. NEVER include raw JSON keys ("problem", "evaluation", "suggestedActions") inside the "reply" text.
 5. Only fill "problem" when the student explicitly asks for a new practice problem; otherwise set it to null.
 6. Only fill "evaluation" when the student submitted an answer to check; otherwise set it to null.
-7. Do NOT use emojis anywhere.
-8. Return valid JSON ONLY matching this schema:
+7. Return valid JSON ONLY matching this schema:
 {
-  "reply": "Concise step-by-step breakdown (under 95 words) ending with a short follow-up question.",
+  "reply": "Clear, zero-skip mathematical walkthrough explaining how the integral or formula is evaluated step-by-step.",
   "problem": null,
   "evaluation": null,
   "suggestedActions": [
-    { "label": "Short action label", "action": "Prompt text when clicked" }
+    { "label": "Zero-Skip Integral Steps", "action": "Walk me through how to solve this integral step-by-step with antiderivative and bounds" },
+    { "label": "Why This Rule Works", "action": "Explain the integration rule and why we subtract the lower bound" }
   ]
-}`
+}`,
+      activeNodeBadges: routed.activeNodeBadges,
+      domainId: routed.activeDomains[0] || 'DOMAIN_MATH_PROOFS_BINARY',
+    }
   }
 
   // kind === 'code'
   const modeLabel = ctx?.mode || 'scenario'
 
-  return `You are a concise, conversational Software Engineering tutor.
-Active Context (Strict Memory - Topic & Last Reply Only):
+  return {
+    systemPrompt: `You are the student's Personal 3D Learning Graph Tutor for Software Engineering & DSA.
+Active Context:
 - Topic Heading: "${safeTopic}"
 - Language: ${ctx?.language || 'code'} (${modeLabel})
 ${ctx?.userCode ? `- Current Student Code:\n\`\`\`${ctx.language || 'text'}\n${ctx.userCode.slice(0, 600)}\n\`\`\`` : ''}
@@ -300,22 +370,26 @@ ${ctx?.expectedOutput ? `- Expected Output: ${ctx.expectedOutput.slice(0, 150)}`
 ${ctx?.feedbackOutput ? `- Execution Output: ${ctx.feedbackOutput.slice(0, 150)}` : ''}
 ${safeLastReply ? `- Your Last Reply: "${safeLastReply}"` : ''}
 
-STRUCTURED WALKTHROUGH & LENGTH RULES (CRITICAL):
-1. STRICT LENGTH CAP: Keep "reply" under 90 words (max 520 characters). Never output a dense wall of text.
-2. Walk through logic using 2-3 short bullet points ("• ") with bold labels.
+${routed.compiledPromptAddendum}
+
+STRUCTURED WALKTHROUGH & JSON OUTPUT RULES (CRITICAL):
+1. STRICT LENGTH CAP: Keep "reply" under 280 words (max 2200 characters). Zero filler.
+2. Contrast Naive vs Optimized complexity using inline-commented code (5-10 lines) + 2-branch ASCII diagram + 3-Sentence Switch TLDR.
 3. NEVER include raw JSON keys ("problem", "evaluation", "suggestedActions") inside "reply".
 4. When the student asks to check their code, fill "evaluation"; otherwise set "evaluation" to null.
-5. End "reply" with one short follow-up question.
-6. Do NOT use emojis anywhere.
-7. Return valid JSON ONLY matching this schema:
+5. Return valid JSON ONLY matching this schema:
 {
-  "reply": "Concise walkthrough (under 90 words), ending with a short follow-up question.",
+  "reply": "3D Learning Graph walkthrough (< 280 words), ending with the 3-Sentence Switch TLDR and 1 stress-test question.",
   "problem": null,
   "evaluation": null,
   "suggestedActions": [
-    { "label": "Short action label", "action": "Prompt text when clicked" }
+    { "label": "2-Branch ASCII + Table", "action": "Draw the 2-branch ASCII flow and 3-column mechanical table" },
+    { "label": "Naive vs O(1) Contrast", "action": "Contrast the slow O(n) path vs fast O(1) path with inline step counts" }
   ]
-}`
+}`,
+    activeNodeBadges: routed.activeNodeBadges,
+    domainId: routed.activeDomains[0] || 'DOMAIN_CODE_DSA_INTERVIEWS',
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -366,7 +440,12 @@ export async function POST(req: NextRequest) {
       ? stripJsonBleed(body.thoughtSummary).slice(0, MAX_LAST_REPLY_CHARS)
       : ''
 
-  const systemPrompt = buildSystemPrompt(body.kind, body.screenContext, lastAssistantReply)
+  const { systemPrompt, activeNodeBadges, domainId } = buildSystemPrompt(
+    body.kind,
+    body.screenContext,
+    lastAssistantReply,
+    lastUserMsg?.content || ''
+  )
 
   // Build strictly bounded prompt with ONLY the topic, last assistant reply, and current student message
   let userPrompt = ''
@@ -379,7 +458,7 @@ export async function POST(req: NextRequest) {
     ]
     userPrompt = parts.join('\n').slice(0, MAX_TOTAL_MEMORY_CHARS)
   } else {
-    userPrompt = `TOPIC: ${topic}\nSTUDENT: Explain the key formula and problem breakdown for "${topic}".`.slice(
+    userPrompt = `TOPIC: ${topic}\nSTUDENT: Explain "${topic}" using the 3D Personal Learning Graph (What Breaks Without It, Action Nickname, 2-Branch ASCII / Table, Zero-Skip Plug-In, and 3-Sentence Switch TLDR).`.slice(
       0,
       MAX_TOTAL_MEMORY_CHARS
     )
@@ -434,6 +513,8 @@ export async function POST(req: NextRequest) {
     problem: parsed.problem && typeof parsed.problem === 'object' ? parsed.problem : null,
     evaluation: parsed.evaluation && typeof parsed.evaluation === 'object' ? parsed.evaluation : null,
     suggestedActions: cleanActions,
+    activeNodeBadges,
+    domainId,
     provider: aiResult.provider,
     model: aiResult.model,
     quota: {

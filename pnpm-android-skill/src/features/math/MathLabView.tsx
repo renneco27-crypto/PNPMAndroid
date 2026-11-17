@@ -1592,27 +1592,54 @@ export default function MathLabView({ deckTitle = 'Math Lab', onBack, cards, dec
               </p>
             </section>
 
-            {/* 2. GIVEN SUITE */}
-            {givenList.length > 0 && (
-              <section className="card">
-                <div className="head mb-2">
-                  <h2 style={{ margin: 0 }}>Known Variables</h2>
-                  <span className="text-[11px] text-[var(--muted)]">Given</span>
-                </div>
-                <div className="w-full max-w-full overflow-x-auto py-1 no-scrollbar">
-                  <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2 min-w-0 max-w-full">
-                    {givenList.map((g, gIdx) => (
-                      <div
-                        key={gIdx}
-                        className="inline-flex items-baseline gap-1.5 min-w-0 max-w-full break-words [overflow-wrap:anywhere] text-base sm:text-lg"
-                      >
-                        <FormattedMathNode expr={g} />
-                      </div>
-                    ))}
+            {/* 2. GIVEN SUITE / KNOWN VARIABLES */}
+            {givenList.length > 0 && (() => {
+              const layout = parseGivenItems(givenList)
+              return (
+                <section className="card">
+                  <div className="head mb-2">
+                    <h2 style={{ margin: 0 }}>Known Variables</h2>
+                    <span className="text-[11px] text-[var(--muted)]">Given</span>
                   </div>
-                </div>
-              </section>
-            )}
+                  {layout.isGrouped ? (
+                    <div className="w-full max-w-full overflow-x-auto py-1 no-scrollbar">
+                      <div
+                        className="inline-grid gap-x-8 gap-y-2 items-baseline min-w-0"
+                        style={{
+                          gridTemplateColumns: `repeat(${layout.colKeys.length || 2}, max-content)`,
+                        }}
+                      >
+                        {layout.rows.map((row, rIdx) => (
+                          <React.Fragment key={rIdx}>
+                            {row.map((item, cIdx) => (
+                              <div
+                                key={cIdx}
+                                className="inline-flex items-baseline gap-1.5 min-w-0 max-w-full text-base sm:text-lg [overflow-wrap:anywhere] break-words"
+                              >
+                                <FormattedMathNode expr={item} />
+                              </div>
+                            ))}
+                          </React.Fragment>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="w-full max-w-full overflow-x-auto py-1 no-scrollbar">
+                      <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2 min-w-0 max-w-full">
+                        {layout.flat.map((g, gIdx) => (
+                          <div
+                            key={gIdx}
+                            className="inline-flex items-baseline gap-1.5 min-w-0 max-w-full break-words [overflow-wrap:anywhere] text-base sm:text-lg"
+                          >
+                            <FormattedMathNode expr={g} />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </section>
+              )
+            })()}
 
             {/* 3. FORMULA REFERENCE & HINT */}
             <section className="card">
@@ -1746,6 +1773,8 @@ export default function MathLabView({ deckTitle = 'Math Lab', onBack, cards, dec
             activeTab: 'notebook',
             problem: currentChallenge.problemLatex || currentChallenge.description,
             problemBreakdown: notebook?.problem_breakdown,
+            solutionSteps: notebook?.solution_steps || steps.map((s) => `Step ${s.stepNumber}: ${s.latex} (${s.explanation})`).join('\n'),
+            answer: resolvedFinalAnswer,
             currentStep: 0,
             totalSteps: steps.length,
             activeStepLatex: steps[0]?.latex || '',

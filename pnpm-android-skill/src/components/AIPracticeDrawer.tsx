@@ -51,19 +51,20 @@ import {
   Sparkles,
   Image as ImageIcon,
   ExternalLink,
+  GitFork,
+  Code,
 } from 'lucide-react'
 import KaTeXMath from './KaTeXMath'
 import MathFormattedText from './MathFormattedText'
 import { ttsService } from '@/lib/ttsService'
 import { getAuthHeaders } from '@/lib/supabase'
-import { apiUrl } from '@/lib/apiBase'
 
 // ─── Strict Memory & Context Character Limits ─────────────
 const MAX_TOPIC_CHARS = 120
-const MAX_LAST_REPLY_CHARS = 350
-const MAX_USER_PROMPT_CHARS = 350
-const MAX_MEMORY_CONTEXT_CHARS = 500
-const MAX_REPLY_DISPLAY_CHARS = 650
+const MAX_LAST_REPLY_CHARS = 450
+const MAX_USER_PROMPT_CHARS = 500
+const MAX_MEMORY_CONTEXT_CHARS = 700
+const MAX_REPLY_DISPLAY_CHARS = 2600
 
 /**
  * Sanitizes assistant text so raw JSON keys ("problem": null, "evaluation": null,
@@ -73,8 +74,10 @@ function stripJsonBleed(input: string): string {
   if (!input) return ''
   let text = input.trim()
 
-  // Strip markdown code fence wrappers if present
-  text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
+  // Strip outer ```json ... ``` wrapper ONLY if the entire string is wrapped in ```json { ... } ```
+  if (/^```json\s*\{/i.test(text)) {
+    text = text.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim()
+  }
 
   // Strip leading {"reply": "..." wrapper if present
   text = text.replace(/^\{\s*"reply"\s*:\s*"/i, '')
@@ -124,7 +127,7 @@ function stripJsonBleed(input: string): string {
 }
 
 // ─── Types ────────────────────────────────────────────────
-export type DrawerKind = 'math' | 'code' | 'gallery'
+export type DrawerKind = 'math' | 'code' | 'gallery' | 'notes'
 
 export interface DrawerWikimediaImage {
   title: string
@@ -173,6 +176,7 @@ interface ChatMessage {
   evaluation?: Evaluation | null
   suggestedActions?: SuggestedAction[]
   images?: DrawerWikimediaImage[]
+  activeNodeBadges?: string[]
 }
 
 export interface ProblemBreakdownContext {
@@ -183,9 +187,9 @@ export interface ProblemBreakdownContext {
 }
 
 export interface ScreenContext {
-  screen: 'math' | 'code' | 'gallery'
+  screen: 'math' | 'code' | 'gallery' | 'notes'
   topic: string
-  activeTab?: string // 'solver' | 'notebook' | 'ide' | 'gallery'
+  activeTab?: string // 'solver' | 'notebook' | 'ide' | 'gallery' | 'notes'
   mode?: string // 'scenario' | 'bug_hunter' | 'practice'
   problem?: string
   problemBreakdown?: ProblemBreakdownContext
@@ -503,6 +507,198 @@ function ProblemCard({
   )
 }
 
+// ─── Rich 3D Learning Graph Reply Renderer ────────────────
+function RichGraphReplyRenderer({ text }: { text: string }) {
+  if (!text) return null
+
+  // Split by fenced code/ASCII blocks ```lang ... ``` (supports c++, c#, text, ascii, js, etc.)
+  const fenceRegex = /```([^\n`]*)\n?([\s\S]*?)```/g
+  const segments: Array<{ type: 'prose' | 'code'; lang?: string; content: string }> = []
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+
+  while ((match = fenceRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      segments.push({ type: 'prose', content: text.slice(lastIndex, match.index) })
+    }
+    segments.push({
+      type: 'code',
+      lang: (match[1] || 'text').trim().toLowerCase(),
+      content: match[2].replace(/^\n+|\n+$/g, ''),
+    })
+    lastIndex = fenceRegex.lastIndex
+  }
+  if (lastIndex < text.length) {
+    segments.push({ type: 'prose', content: text.slice(lastIndex) })
+  }
+
+  // Helper to split a prose segment into Markdown pipe tables, ### headings, and regular prose
+  const renderProseWithTables = (prose: string, baseKey: string) => {
+    const lines = prose.split('\n')
+    const blocks: Array<
+      | { kind: 'text'; text: string }
+      | { kind: 'heading'; text: string }
+      | { kind: 'table'; headers: string[]; rows: string[][] }
+    > = []
+    let currentText: string[] = []
+    let i = 0
+
+    const flushText = () => {
+      if (currentText.length > 0) {
+        const joined = currentText.join('\n').trim()
+        if (joined) blocks.push({ kind: 'text', text: joined })
+        currentText = []
+      }
+    }
+
+    while (i < lines.length) {
+      const rawLine = lines[i]
+      const line = rawLine.trim()
+      const nextLine = i + 1 < lines.length ? lines[i + 1].trim() : ''
+
+      // 1. Markdown Section Heading (e.g. ### 1. If You Do Nothing, What Breaks?)
+      const headingMatch = line.match(/^#{1,4}\s+(.+)$/)
+      if (headingMatch) {
+        flushText()
+        blocks.push({ kind: 'heading', text: headingMatch[1].trim() })
+        i++
+        continue
+      }
+
+      // 2. Markdown Pipe Table
+      if (
+        line.startsWith('|') &&
+        line.endsWith('|') &&
+        nextLine.startsWith('|') &&
+        /^\|[\s\-:|]+\|$/.test(nextLine)
+      ) {
+        flushText()
+        const headers = line
+          .slice(1, -1)
+          .split('|')
+          .map((c) => c.trim())
+        i += 2 // skip header and separator row
+        const rows: string[][] = []
+        while (i < lines.length && lines[i].trim().startsWith('|')) {
+          const rowCells = lines[i]
+            .trim()
+            .replace(/^\|/, '')
+            .replace(/\|$/, '')
+            .split('|')
+            .map((c) => c.trim())
+          rows.push(rowCells)
+          i++
+        }
+        blocks.push({ kind: 'table', headers, rows })
+      } else {
+        currentText.push(rawLine)
+        i++
+      }
+    }
+    flushText()
+
+    return blocks.map((b, bIdx) => {
+      if (b.kind === 'heading') {
+        return (
+          <div
+            key={`${baseKey}-hd-${bIdx}`}
+            className="pt-1.5 pb-0.5 text-[11px] font-bold uppercase tracking-wider text-cyan-300 border-b border-white/10"
+          >
+            <MathFormattedText text={b.text} />
+          </div>
+        )
+      }
+      if (b.kind === 'table') {
+        return (
+          <div
+            key={`${baseKey}-tbl-${bIdx}`}
+            className="my-2 overflow-x-auto rounded-xl border border-white/15 bg-slate-950/60"
+          >
+            <table className="w-full text-left text-[11px] border-collapse">
+              <thead>
+                <tr className="bg-white/[0.07] border-b border-white/15">
+                  {b.headers.map((h, hIdx) => (
+                    <th
+                      key={hIdx}
+                      className="px-2.5 py-1.5 font-bold text-cyan-300 border-r last:border-r-0 border-white/10 uppercase tracking-wider text-[10px]"
+                    >
+                      <MathFormattedText text={h} />
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/10">
+                {b.rows.map((row, rIdx) => (
+                  <tr key={rIdx} className="even:bg-white/[0.02]">
+                    {row.map((cell, cIdx) => (
+                      <td
+                        key={cIdx}
+                        className={`px-2.5 py-1.5 text-slate-200 border-r last:border-r-0 border-white/10 ${
+                          cIdx === 0 ? 'font-semibold text-white' : ''
+                        }`}
+                      >
+                        <MathFormattedText text={cell} />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      }
+      return (
+        <div key={`${baseKey}-txt-${bIdx}`} className="whitespace-pre-wrap leading-relaxed">
+          <MathFormattedText text={b.text} />
+        </div>
+      )
+    })
+  }
+
+  return (
+    <div className="space-y-2">
+      {segments.map((seg, idx) => {
+        if (seg.type === 'code') {
+          const isAscii =
+            !seg.lang ||
+            seg.lang === 'text' ||
+            seg.lang === 'ascii' ||
+            seg.lang === 'plaintext' ||
+            (/(-->|\|--|\+--|PATH A|PATH B)/i.test(seg.content) && !/[{};]/.test(seg.content))
+          return (
+            <div
+              key={`seg-${idx}`}
+              className="my-1.5 rounded-xl overflow-hidden border border-white/15 bg-slate-950/85"
+            >
+              <div className="px-2.5 py-1 bg-white/[0.06] border-b border-white/10 flex items-center justify-between">
+                <span className="text-[9px] font-mono uppercase tracking-wider text-cyan-300 flex items-center gap-1.5">
+                  {isAscii ? (
+                    <>
+                      <GitFork size={12} className="text-cyan-400" /> 2-Branch ASCII Flow
+                    </>
+                  ) : (
+                    <>
+                      <Code size={12} className="text-emerald-400" /> Code ({seg.lang})
+                    </>
+                  )}
+                </span>
+              </div>
+              <pre
+                className={`p-2.5 overflow-x-auto font-mono text-[11px] leading-[1.45] whitespace-pre ${
+                  isAscii ? 'text-cyan-100' : 'text-emerald-300'
+                }`}
+              >
+                <code>{seg.content}</code>
+              </pre>
+            </div>
+          )
+        }
+        return <React.Fragment key={`seg-${idx}`}>{renderProseWithTables(seg.content, `seg-${idx}`)}</React.Fragment>
+      })}
+    </div>
+  )
+}
+
 // ─── Single chat bubble ───────────────────────────────────
 function ChatBubble({
   msg,
@@ -539,11 +735,28 @@ function ChatBubble({
 
   return (
     <div className="flex flex-col gap-2">
+      {/* 3D Personal Learning Graph Active Node Badges */}
+      {msg.activeNodeBadges && msg.activeNodeBadges.length > 0 && (
+        <div className="flex items-center gap-1 flex-wrap max-w-[96%] px-0.5">
+          <span className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+            3D Graph
+          </span>
+          {msg.activeNodeBadges.slice(0, 4).map((badge, bIdx) => (
+            <span
+              key={`${badge}-${bIdx}`}
+              className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/[0.04] text-slate-300 border border-white/10"
+            >
+              {badge}
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* AI reply text (hidden when redundant with problem/evaluation block) */}
       {showOuterBubble && (
-        <div className="max-w-[92%] px-3 py-2 rounded-2xl rounded-tl-sm bg-white/[0.05] border border-white/10 text-xs text-slate-200 leading-relaxed flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1 whitespace-pre-wrap space-y-1">
-            <MathFormattedText text={sanitizedContent} />
+        <div className="max-w-[96%] px-3 py-2.5 rounded-2xl rounded-tl-sm bg-white/[0.05] border border-white/10 text-xs text-slate-200 leading-relaxed flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1 space-y-1">
+            <RichGraphReplyRenderer text={sanitizedContent} />
           </div>
           {hasSpokenContent && !msg.problem && !msg.evaluation && (
             <button
@@ -763,6 +976,25 @@ export default function AIPracticeDrawer({
     if (drawerState === 'collapsed') {
       ttsService.stop()
       setSpeakingIdx(null)
+      return
+    }
+
+    const handleClose = () => {
+      setDrawerState('collapsed')
+      ttsService.stop()
+      setSpeakingIdx(null)
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        handleClose()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('studyup:close-ai-drawer', handleClose)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('studyup:close-ai-drawer', handleClose)
     }
   }, [drawerState])
 
@@ -829,16 +1061,15 @@ export default function AIPracticeDrawer({
               topic: safeTopic,
               activeTab: currentScreenContext.activeTab,
               mode: currentScreenContext.mode,
-              problem: currentScreenContext.problem?.slice(0, 260),
+              problem: currentScreenContext.problem?.slice(0, 750),
+              keyTakeaway: currentScreenContext.keyTakeaway?.slice(0, 400),
               problemBreakdown: currentScreenContext.problemBreakdown,
-              ...(includeStepDetail
-                ? {
-                    currentStep: currentScreenContext.currentStep,
-                    totalSteps: currentScreenContext.totalSteps,
-                    activeStepLatex: currentScreenContext.activeStepLatex?.slice(0, 140),
-                    activeStepExplanation: currentScreenContext.activeStepExplanation?.slice(0, 140),
-                  }
-                : {}),
+              solutionSteps: currentScreenContext.solutionSteps?.slice(0, 1500),
+              answer: currentScreenContext.answer?.slice(0, 200),
+              currentStep: currentScreenContext.currentStep,
+              totalSteps: currentScreenContext.totalSteps,
+              activeStepLatex: currentScreenContext.activeStepLatex?.slice(0, 200),
+              activeStepExplanation: currentScreenContext.activeStepExplanation?.slice(0, 200),
               ...(kind === 'code'
                 ? {
                     language: currentScreenContext.language,
@@ -851,7 +1082,7 @@ export default function AIPracticeDrawer({
             }
           : undefined
 
-        const res = await fetch(apiUrl('/api/lab/chat'), {
+        const res = await fetch('/api/lab/chat', {
           method: 'POST',
           headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({
@@ -882,6 +1113,7 @@ export default function AIPracticeDrawer({
           problem: data.problem ?? null,
           evaluation: data.evaluation ?? null,
           suggestedActions: data.suggestedActions ?? [],
+          activeNodeBadges: Array.isArray(data.activeNodeBadges) ? data.activeNodeBadges : [],
         }
 
         const newIdx = priorMessages.length + 1
@@ -1081,16 +1313,18 @@ export default function AIPracticeDrawer({
       `}
     >
       {/* ── Header ─────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-3.5 py-3 border-b border-white/8 shrink-0 gap-2">
+      <div className="flex items-center justify-between px-3.5 pt-[max(calc(env(safe-area-inset-top,0px)+10px),14px)] pb-3 border-b border-white/8 shrink-0 gap-2">
         <div className="flex flex-col min-w-0 flex-1">
           <div className="flex items-center gap-1.5 flex-wrap">
             <MessageSquare size={14} className="text-[var(--color-accent,#ff2d85)] shrink-0" />
             <span className="text-xs font-bold text-white tracking-wide">
               {kind === 'math'
-                ? 'MathLab AI Tutor'
+                ? 'MathLab 3D AI Tutor'
                 : kind === 'code'
-                  ? 'CodeLab AI Tutor'
-                  : 'Gallery Visual AI'}
+                  ? 'CodeLab 3D AI Tutor'
+                  : kind === 'notes'
+                    ? 'Notes 3D AI Tutor'
+                    : 'Gallery Visual AI'}
             </span>
             {currentScreenContext?.activeTab && (
               <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-slate-300 uppercase tracking-wider">
@@ -1170,6 +1404,8 @@ export default function AIPracticeDrawer({
             }}
             className="p-1.5 rounded-lg hover:bg-white/8 text-slate-400 hover:text-white transition-colors cursor-pointer"
             title="Close"
+            aria-label="Close AI Drawer"
+            data-close-ai-drawer="true"
           >
             <X size={14} />
           </button>
@@ -1187,14 +1423,16 @@ export default function AIPracticeDrawer({
               <p className="text-xs font-semibold text-white px-2">
                 {currentScreenContext?.topic || 'Interactive AI Tutor'}
               </p>
-              <p className="text-[11px] text-slate-400 mt-1 max-w-[240px] leading-relaxed mx-auto">
+              <p className="text-[11px] text-slate-400 mt-1 max-w-[260px] leading-relaxed mx-auto">
                 {kind === 'gallery'
                   ? 'Find educational diagrams from your notes and add them directly to your Gallery grid:'
-                  : `Connected directly to your active ${kind === 'math' ? 'problem' : 'code'} on screen. Pick a quick action to begin:`}
+                  : `Powered by your 33-Node 3D Learning Graph. Connected to your active ${
+                      kind === 'math' ? 'formula' : kind === 'code' ? 'code' : 'study note'
+                    } on screen:`}
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-1.5 justify-center mt-2 max-w-[280px]">
+            <div className="flex flex-wrap gap-1.5 justify-center mt-2 max-w-[295px]">
               {kind === 'gallery' ? (
                 <>
                   <button
@@ -1231,46 +1469,88 @@ export default function AIPracticeDrawer({
                     <span>Visual Quiz</span>
                   </button>
                 </>
-              ) : kind === 'math' ? (
+              ) : kind === 'notes' ? (
                 <>
                   <button
                     onClick={() =>
                       handleSend(
-                        'Review the working formula and problem breakdown for this topic.',
-                        'Review Formula',
+                        'TEACH: Explain this note using my 3D Learning Graph (What Breaks Without It, Action Nickname, 2-Branch ASCII + 3-Col Table, Zero-Skip Plug-In, and 3-Sentence Switch TLDR).',
+                        'Explain in 3D Style (HOW)',
+                        false
+                      )
+                    }
+                    className="inline-flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-full bg-[var(--color-accent,#ff2d85)]/20 hover:bg-[var(--color-accent,#ff2d85)]/30 text-white border border-[var(--color-accent,#ff2d85)]/40 font-semibold transition-colors cursor-pointer active:scale-95"
+                  >
+                    <Sparkles size={11} />
+                    <span>Explain in 3D Style (HOW)</span>
+                  </button>
+                  <button
+                    onClick={() =>
+                      handleSend(
+                        'Draw a 2-Branch ASCII flow diagram and a Per-Device / 3-Column Mechanical Table for this note.',
+                        '2-Branch ASCII + Table',
                         false
                       )
                     }
                     className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 transition-colors cursor-pointer active:scale-95"
                   >
                     <BookOpen size={11} />
-                    <span>Review Formula</span>
+                    <span>2-Branch ASCII + Table</span>
                   </button>
                   <button
                     onClick={() =>
                       handleSend(
-                        'Can you explain what happens in this step?',
-                        'Explain Step',
-                        true
-                      )
-                    }
-                    className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 transition-colors cursor-pointer active:scale-95"
-                  >
-                    <Lightbulb size={11} />
-                    <span>Explain Step</span>
-                  </button>
-                  <button
-                    onClick={() =>
-                      handleSend(
-                        'Give me a hint for solving this problem based on the problem breakdown.',
-                        'Give Me A Hint',
+                        'Show a Zero-Skip Plug-In example with concrete numbers (n=1, 2, 3) and give me a Real-World Hacker Stress Test.',
+                        'Zero-Skip + Stress Test',
                         false
                       )
                     }
                     className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 transition-colors cursor-pointer active:scale-95"
                   >
                     <Compass size={11} />
-                    <span>Give Me A Hint</span>
+                    <span>Zero-Skip + Stress Test</span>
+                  </button>
+                </>
+              ) : kind === 'math' ? (
+                <>
+                  <button
+                    onClick={() =>
+                      handleSend(
+                        'TEACH: Explain this formula using my 3D Learning Graph (What Breaks Without It, Action Nickname, Zero-Skip Plug-In Table for n=1,2,3, and 3-Sentence Switch TLDR).',
+                        'Explain in 3D Style (HOW)',
+                        false
+                      )
+                    }
+                    className="inline-flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-full bg-[var(--color-accent,#ff2d85)]/20 hover:bg-[var(--color-accent,#ff2d85)]/30 text-white border border-[var(--color-accent,#ff2d85)]/40 font-semibold transition-colors cursor-pointer active:scale-95"
+                  >
+                    <Sparkles size={11} />
+                    <span>Explain in 3D Style (HOW)</span>
+                  </button>
+                  <button
+                    onClick={() =>
+                      handleSend(
+                        'Can you explain what happens in this step with zero skipped arithmetic?',
+                        'Explain Step (Zero-Skip)',
+                        true
+                      )
+                    }
+                    className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 transition-colors cursor-pointer active:scale-95"
+                  >
+                    <Lightbulb size={11} />
+                    <span>Explain Step (Zero-Skip)</span>
+                  </button>
+                  <button
+                    onClick={() =>
+                      handleSend(
+                        'Draw a 2-Branch ASCII flow diagram and a Zero-Skip Plug-In table (n=1, 2, 3) for this problem.',
+                        '2-Branch ASCII + Plug-In',
+                        false
+                      )
+                    }
+                    className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 transition-colors cursor-pointer active:scale-95"
+                  >
+                    <Compass size={11} />
+                    <span>2-Branch ASCII + Plug-In</span>
                   </button>
                 </>
               ) : (
@@ -1278,41 +1558,41 @@ export default function AIPracticeDrawer({
                   <button
                     onClick={() =>
                       handleSend(
-                        'Can you review my code and point out any issues?',
-                        'Review My Code',
+                        'TEACH: Explain this code using my 3D Learning Graph (What Breaks Without It, 2-Branch ASCII + 3-Col Table, Naive vs Optimized inline step counts, and 3-Sentence Switch TLDR).',
+                        'Explain in 3D Style (HOW)',
+                        false
+                      )
+                    }
+                    className="inline-flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-full bg-[var(--color-accent,#ff2d85)]/20 hover:bg-[var(--color-accent,#ff2d85)]/30 text-white border border-[var(--color-accent,#ff2d85)]/40 font-semibold transition-colors cursor-pointer active:scale-95"
+                  >
+                    <Sparkles size={11} />
+                    <span>Explain in 3D Style (HOW)</span>
+                  </button>
+                  <button
+                    onClick={() =>
+                      handleSend(
+                        'Can you review my code, validate what is 99% right, and sharpen the 1% edge case?',
+                        'Review My Code (99% / 1%)',
                         false
                       )
                     }
                     className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 transition-colors cursor-pointer active:scale-95"
                   >
                     <Code2 size={11} />
-                    <span>Review My Code</span>
+                    <span>Review My Code (99% / 1%)</span>
                   </button>
                   <button
                     onClick={() =>
                       handleSend(
-                        'What should I write next to meet the requirements?',
-                        'Next Line Hint',
-                        false
-                      )
-                    }
-                    className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 transition-colors cursor-pointer active:scale-95"
-                  >
-                    <Lightbulb size={11} />
-                    <span>Next Line Hint</span>
-                  </button>
-                  <button
-                    onClick={() =>
-                      handleSend(
-                        'Explain the expected output and edge cases.',
-                        'Expected Output',
+                        'Give me a 2-Branch ASCII flow diagram and a Real-World Production Stress Test for this code.',
+                        '2-Branch ASCII + Stress Test',
                         false
                       )
                     }
                     className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 transition-colors cursor-pointer active:scale-95"
                   >
                     <Terminal size={11} />
-                    <span>Expected Output</span>
+                    <span>2-Branch ASCII + Stress Test</span>
                   </button>
                 </>
               )}
@@ -1343,7 +1623,7 @@ export default function AIPracticeDrawer({
       </div>
 
       {/* ── Input footer ────────────────────────────────────── */}
-      <div className="px-3 pb-4 pt-2 border-t border-white/8 shrink-0">
+      <div className="px-3 pt-2 pb-[max(calc(env(safe-area-inset-bottom,0px)+14px),18px)] border-t border-white/8 shrink-0">
         {kind === 'gallery' && onRequestDeckImages && (
           <div className="flex items-center gap-1.5 mb-2">
             <button
