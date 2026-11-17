@@ -1730,386 +1730,45 @@ export default function CodeLabView({
   const finalExpected = currentChallenge.scenario?.simulatedOutput || currentChallenge.bugHunter?.simulatedOutput || termData.stdout || 'Verified'
   const dataMap = currentChallenge.codeLabData?.data_map || []
 
-  return (
-    <div className="codelab-theme min-h-screen bg-[var(--bg)] text-[var(--text)] antialiased transition-colors selection:bg-[#2fd16a] selection:text-black pb-24">
-      {/* SCOPED STYLES MATCHING MathLab_ Center of Mass.html WITH GREEN CODELAB THEME */}
-      <style>{`
-        .codelab-theme {
-          --bg: #050505;
-          --card: #101010;
-          --card2: #191919;
-          --text: #ffffff;
-          --muted: #a8a8a8;
-          --line: #222222;
-          --green: #2fd16a;
-          --okbg: #17582d;
-          --okt: #ffffff;
-          --hero: #052e16;
-        }
-        @media (prefers-color-scheme: light) {
-          :root:not([data-theme="dark"]) .codelab-theme {
-            --bg: #f4f4f4;
-            --card: #ffffff;
-            --card2: #f0f0f0;
-            --text: #111111;
-            --muted: #666666;
-            --line: #e2e2e2;
-            --green: #14a44d;
-            --okbg: #17703a;
-            --okt: #ffffff;
-            --hero: #dcfce7;
-          }
-        }
-        :root[data-theme="light"] .codelab-theme {
-          --bg: #f4f4f4;
-          --card: #ffffff;
-          --card2: #f0f0f0;
-          --text: #111111;
-          --muted: #666666;
-          --line: #e2e2e2;
-          --green: #14a44d;
-          --okbg: #17703a;
-          --okt: #ffffff;
-          --hero: #dcfce7;
-        }
-
-        .codelab-theme main {
-          max-width: 640px;
-          width: 100%;
-          margin: 0 auto;
-          padding: max(calc(env(safe-area-inset-top, 0px) + 12px), 20px) 14px 48px;
-          min-width: 0;
-          box-sizing: border-box;
-          overflow-x: hidden;
-        }
-        .codelab-theme .bar {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 4px 2px 14px;
-        }
-        .codelab-theme .logo {
-          flex: 1;
-          font-size: 1.7rem;
-          font-weight: 900;
-          letter-spacing: -.03em;
-          color: var(--green);
-          text-transform: uppercase;
-        }
-        .codelab-theme .avatar {
-          width: 36px;
-          height: 36px;
-          border-radius: 50%;
-          background: var(--green);
-          display: grid;
-          place-items: center;
-          color: #000;
-          font-weight: 800;
-          font-size: 0.85rem;
-        }
-        .codelab-theme .hero {
-          border-radius: 16px;
-          padding: 20px 16px 14px;
-          margin: 0 0 12px;
-          background: linear-gradient(170deg, var(--hero) 0%, var(--card) 100%);
-          border: 1px solid var(--line);
-          max-width: 100%;
-          min-width: 0;
-          overflow: hidden;
-          box-sizing: border-box;
-        }
-        .codelab-theme .tag {
-          font-size: .75rem;
-          font-weight: 800;
-          letter-spacing: .12em;
-          text-transform: uppercase;
-          color: var(--green);
-          margin: 0 0 8px;
-        }
-        .codelab-theme h1 {
-          font-size: 1.65rem;
-          line-height: 1.15;
-          font-weight: 900;
-          margin: 0 0 12px;
-          letter-spacing: -.02em;
-          overflow-wrap: anywhere;
-          word-break: break-word;
-          max-width: 100%;
-        }
-        .codelab-theme .chips {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 8px;
-          margin-bottom: 10px;
-        }
-        .codelab-theme .chip {
-          background: var(--card2);
-          border-radius: 999px;
-          padding: 5px 14px;
-          font-size: .85rem;
-          font-weight: 600;
-        }
-        .codelab-theme .card {
-          background: var(--card);
-          border: 1px solid var(--line);
-          border-radius: 14px;
-          padding: 16px;
-          margin: 0 0 12px;
-          max-width: 100%;
-          min-width: 0;
-          box-sizing: border-box;
-          overflow: hidden;
-          overflow-wrap: anywhere;
-          word-break: break-word;
-        }
-        .codelab-theme .card * {
-          box-sizing: border-box;
-        }
-        .codelab-theme .head {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          margin: 0 0 12px;
-          max-width: 100%;
-          min-width: 0;
-        }
-        .codelab-theme h2 {
-          font-size: 1.15rem;
-          font-weight: 800;
-          margin: 0;
-          overflow-wrap: anywhere;
-          word-break: break-word;
-          min-width: 0;
-        }
-        .codelab-theme .btn {
-          background: none;
-          border: 0;
-          color: var(--green);
-          font: 600 .95rem system-ui, sans-serif;
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          padding: 6px;
-          cursor: pointer;
-        }
-        .codelab-theme p {
-          margin: 0;
-        }
-        .codelab-theme .lab {
-          font-size: .72rem;
-          font-weight: 700;
-          color: var(--muted);
-          margin: 0 0 6px;
-          text-transform: uppercase;
-          letter-spacing: .1em;
-        }
-        .codelab-theme .grid {
-          display: grid;
-          grid-template-columns: max-content max-content minmax(0, 1fr);
-          column-gap: .55em;
-          row-gap: .4em;
-          align-items: baseline;
-          min-width: 0;
-          max-width: 100%;
-          overflow-x: auto;
-          box-sizing: border-box;
-        }
-        .codelab-theme .pair {
-          grid-template-columns: repeat(2, max-content max-content max-content);
-          font: 1.1rem Georgia, serif;
-          padding: 0 2px;
-          min-width: 0;
-          max-width: 100%;
-          overflow-x: auto;
-        }
-        .codelab-theme .pair .g2 {
-          padding-left: 2.2em;
-        }
-        .codelab-theme .pair .r {
-          white-space: nowrap;
-        }
-        .codelab-theme .eqbox {
-          background: var(--card2);
-          border-radius: 10px;
-          padding: 12px 14px;
-          font: 0.95rem/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-          overflow-x: auto;
-          overflow-y: hidden;
-          max-width: 100%;
-          min-width: 0;
-          box-sizing: border-box;
-          overflow-wrap: anywhere;
-          word-break: break-word;
-          -webkit-overflow-scrolling: touch;
-        }
-        .codelab-theme .frm {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 10px;
-          min-width: 0;
-          max-width: 100%;
-        }
-        .codelab-theme .frm > div {
-          flex: 1 1 130px;
-          min-width: 0;
-          max-width: 100%;
-        }
-        .codelab-theme .frm > div:first-child {
-          flex: 2 1 250px;
-          min-width: 0;
-          max-width: 100%;
-        }
-        .codelab-theme .note {
-          display: none;
-          margin-top: 12px;
-          color: var(--muted);
-          font-size: .95rem;
-        }
-        .codelab-theme .note.on {
-          display: block;
-        }
-        .codelab-theme .step {
-          display: grid;
-          grid-template-columns: 2rem minmax(0, 1fr);
-          gap: 12px;
-          padding: 14px 0;
-          border-top: 1px solid var(--line);
-          min-width: 0;
-          max-width: 100%;
-          overflow: hidden;
-        }
-        .codelab-theme .step:first-of-type {
-          border-top: 0;
-          padding-top: 0;
-        }
-        .codelab-theme .num {
-          width: 2rem;
-          height: 2rem;
-          border-radius: 50%;
-          background: var(--green);
-          color: #000;
-          font-weight: 800;
-          display: grid;
-          place-items: center;
-          font-size: .95rem;
-        }
-        .codelab-theme .t {
-          font-weight: 600;
-          margin: 3px 0 8px;
-        }
-        .codelab-theme .final {
-          background: var(--okbg);
-          color: var(--okt);
-          border-radius: 12px;
-          padding: 16px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-          margin: 0 0 12px;
-          max-width: 100%;
-          min-width: 0;
-          box-sizing: border-box;
-          overflow: hidden;
-        }
-        .codelab-theme .final > div:first-child {
-          flex: 1;
-          min-width: 0;
-          overflow: hidden;
-        }
-        .codelab-theme .final small {
-          display: block;
-          font-size: .72rem;
-          font-weight: 800;
-          letter-spacing: .14em;
-          text-transform: uppercase;
-          opacity: .9;
-        }
-        .codelab-theme .final .v {
-          font: 600 1.35rem/1.3 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-          overflow-x: auto;
-          overflow-wrap: anywhere;
-          word-break: break-all;
-          max-width: 100%;
-          min-width: 0;
-        }
-        .codelab-theme .chk {
-          width: 44px;
-          height: 44px;
-          border-radius: 50%;
-          border: 2px solid #5be08c;
-          display: grid;
-          place-items: center;
-          color: #5be08c;
-          flex: none;
-        }
-        .codelab-theme .big {
-          border-left: 4px solid var(--green);
-        }
-        .codelab-theme .sym {
-          display: grid;
-          grid-template-columns: minmax(0, 5.5rem) minmax(0, 1fr);
-          min-width: 0;
-          max-width: 100%;
-          overflow-x: auto;
-          overflow-wrap: anywhere;
-          word-break: break-word;
-        }
-        .codelab-theme .sym > * {
-          padding: 10px 0;
-          border-top: 1px solid var(--line);
-          min-width: 0;
-        }
-        .codelab-theme .sym > :nth-child(-n+2) {
-          border-top: 0;
-        }
-        .codelab-theme .sym .s {
-          font: 600 0.95rem ui-monospace, SFMono-Regular, Menlo, monospace;
-          overflow-wrap: anywhere;
-          word-break: break-all;
-          min-width: 0;
-        }
-        .codelab-theme .sym b {
-          display: block;
-          font-weight: 600;
-        }
-        .codelab-theme .sym .u {
-          display: block;
-          color: var(--green);
-          font-size: .85rem;
-          font-weight: 600;
-        }
-        .codelab-theme nav {
+  if ((labStyle as string) === 'exam') {
+    return (
+      <div className="cd-fullscreen-app">
+        <style>{`
+        .cd-fullscreen-app {
+          --bg: #0B0D11;
+          --card: #15181E;
+          --card2: #1B2028;
+          --text: #E6E9EF;
+          --muted: #9AA2B1;
+          --line: #232833;
+          --accent: #0B6BFF;
           position: fixed;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: var(--card);
-          border-top: 1px solid var(--line);
-          padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0px));
+          inset: 0;
           z-index: 40;
-        }
-        .codelab-theme nav div {
-          max-width: 640px;
-          margin: 0 auto;
-          display: flex;
-          justify-content: space-around;
-        }
-        .codelab-theme nav span {
+          height: 100dvh;
+          width: 100%;
           display: flex;
           flex-direction: column;
+          overflow: hidden;
+          background: #0B0D11;
+          color: #E6E9EF;
+        }
+        .cd-header-bar {
+          flex: none;
+          display: flex;
           align-items: center;
-          gap: 2px;
-          font-size: .72rem;
-          color: var(--muted);
-          min-width: 56px;
-          cursor: pointer;
+          justify-content: space-between;
+          padding: max(calc(env(safe-area-inset-top, 0px) + 8px), 12px) 16px 10px;
+          border-bottom: 1px solid var(--line);
+          background: #0B0D11;
         }
-        .codelab-theme nav span.on {
-          color: var(--green);
-          font-weight: 700;
+        .cd-body {
+          flex: 1;
+          min-height: 0;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
         }
-
         /* CODEDRILL ANTI-SLOP ENGINE (codedrill v2) */
         .cd-app {
           width: 100%;
@@ -2416,6 +2075,709 @@ export default function CodeLabView({
         .cd-mv button:active {
           background: #0006;
         }
+        `}</style>
+        <header className="cd-header-bar">
+          <div className="flex items-center gap-2">
+            {onBack && (
+              <button
+                onClick={onBack}
+                className="p-1 rounded-lg text-[#9AA2B1] hover:text-[#fff] transition-colors cursor-pointer"
+                title="Back"
+              >
+                <ArrowLeft size={18} />
+              </button>
+            )}
+            <span className="font-mono font-bold text-sm text-[#E6E9EF] tracking-tight">
+              code<b className="text-[#0B6BFF]">drill</b>
+            </span>
+          </div>
+
+          {/* Card Switcher Pills: Prev [Card X of Y] Next */}
+          <div className="flex items-center gap-1 bg-[#0F1217] px-2 py-0.5 rounded-xl border border-[#232833]">
+            <button
+              onClick={() => handleChallengeChange(Math.max(0, currentIndex - 1))}
+              disabled={currentIndex === 0}
+              className="text-[#9AA2B1] disabled:opacity-20 hover:text-white transition-colors cursor-pointer p-0.5"
+              title="Previous Card"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <span className="font-mono text-xs text-[#E6E9EF] font-bold px-1">
+              Card {currentIndex + 1} / {challenges.length}
+            </span>
+            <button
+              onClick={() => handleChallengeChange(Math.min(challenges.length - 1, currentIndex + 1))}
+              disabled={currentIndex === challenges.length - 1}
+              className="text-[#9AA2B1] disabled:opacity-20 hover:text-white transition-colors cursor-pointer p-0.5"
+              title="Next Card"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+
+          {/* Notes vs Exam Switcher */}
+          <div className="flex items-center p-0.5 rounded-lg bg-[#0F1217] border border-[#232833]">
+            <button
+              onClick={() => setLabStyle('notes')}
+              className="px-2.5 py-1 rounded text-xs font-semibold text-[#9AA2B1] hover:text-white transition-all cursor-pointer"
+            >
+              Notes
+            </button>
+            <button
+              onClick={() => setLabStyle('exam')}
+              className="px-2.5 py-1 rounded text-xs font-bold bg-[#0B6BFF] text-white shadow-sm transition-all cursor-pointer"
+            >
+              Exam
+            </button>
+          </div>
+        </header>
+
+        {/* 3 Tabs Segmented Control: Build | Debug | Reorder */}
+        <div className="cd-seg" role="tablist">
+          <button
+            role="tab"
+            aria-selected={examTab === 'build'}
+            onClick={() => { buzz(); setExamTab('build'); }}
+          >
+            Build
+          </button>
+          <button
+            role="tab"
+            aria-selected={examTab === 'debug'}
+            onClick={() => { buzz(); setExamTab('debug'); }}
+          >
+            Debug
+          </button>
+          <button
+            role="tab"
+            aria-selected={examTab === 'order'}
+            onClick={() => { buzz(); setExamTab('order'); }}
+          >
+            Reorder
+          </button>
+          <i style={{ transform: `translateX(${['build', 'debug', 'order'].indexOf(examTab) * 100}%)` }} />
+        </div>
+
+        {/* Full-Height Body occupying 100% of remaining phone viewport */}
+        <div className="cd-body">
+          {examTab === 'build' && (
+            <section className="cd-view">
+              <div className="cd-code">
+                <div className="cd-ed">
+                  <div className="cd-gut">
+                    {Array.from({ length: Math.max(1, buildCode.split('\n').length) }, (_, i) => i + 1).join('\n')}
+                  </div>
+                  <textarea
+                    ref={buildTextareaRef}
+                    value={buildCode}
+                    onChange={(e) => {
+                      setBuildCode(e.target.value)
+                      setBuildResults(null)
+                      setBuildDone(false)
+                    }}
+                    spellCheck={false}
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    aria-label="Code Editor"
+                    className="cd-ta"
+                    placeholder="// Enter program logic here..."
+                  />
+                </div>
+              </div>
+
+              {/* Quick Keys Toolbar */}
+              <div className="cd-keys">
+                {[
+                  ['Tab', <svg key="tab" viewBox="0 0 24 24" className="w-4 h-4 stroke-2 stroke-current fill-none shrink-0"><path d="M4 12h14M13 7l5 5-5 5M20 5v14" /></svg>],
+                  ['(', '('],
+                  [')', ')'],
+                  ['[', '['],
+                  [']', ']'],
+                  ['{', '{'],
+                  ['}', '}'],
+                  [':', ':'],
+                  ['"', '"'],
+                  ['=', '='],
+                  ['+', '+'],
+                  ['*', '*'],
+                  ['%', '%'],
+                  ['>', '>'],
+                  ['#', '#'],
+                  ['_', '_'],
+                ].map(([kLabel, icon]) => (
+                  <button
+                    key={String(kLabel)}
+                    type="button"
+                    aria-label={String(kLabel)}
+                    onClick={() => handleQuickKey(String(kLabel))}
+                  >
+                    {icon}
+                  </button>
+                ))}
+              </div>
+
+              {/* Console Output */}
+              <div className="cd-out">
+                {buildResults === null ? (
+                  <span>Run to check.</span>
+                ) : (
+                  <div className="space-y-1">
+                    {buildResults.map((r, i) => (
+                      <div key={i} className={`flex items-center gap-2 ${r.ok ? 'cd-p' : 'cd-f'}`}>
+                        {r.ok ? (
+                          <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 stroke-[2.5] stroke-current fill-none shrink-0">
+                            <path d="M5 12l5 5 9-10" />
+                          </svg>
+                        ) : (
+                          <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 stroke-[2.5] stroke-current fill-none shrink-0">
+                            <path d="M6 6l12 12M18 6L6 18" />
+                          </svg>
+                        )}
+                        <span>{r.label}</span>
+                      </div>
+                    ))}
+                    {buildDone && (
+                      <div className="cd-t">Topic: {currentChallenge.topic}</div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Bottom Sheet */}
+              <div className="cd-sheet">
+                <div className="cd-meta">
+                  <span>{currentIndex + 1} / {challenges.length}</span>
+                  <span>{buildDone ? currentChallenge.topic : 'Topic hidden'}</span>
+                </div>
+                <p className="cd-q">{currentDrill.build.q}</p>
+                <div className="cd-row">
+                  <button
+                    type="button"
+                    className="cd-ghost"
+                    onClick={() => { buzz(); setShowBuildHint(!showBuildHint); }}
+                  >
+                    Hint
+                  </button>
+                  <button
+                    type="button"
+                    className="cd-btn"
+                    onClick={handleRunBuild}
+                  >
+                    {buildDone ? 'Next' : 'Run'}
+                  </button>
+                </div>
+                {showBuildHint && (
+                  <div className="cd-hint">{currentDrill.build.h}</div>
+                )}
+              </div>
+            </section>
+          )}
+
+          {examTab === 'debug' && (
+            <section className="cd-view">
+              <div className="cd-code">
+                {debugLines.map((l, i) => (
+                  <div
+                    key={i}
+                    className={`cd-l ${debugRes[i] || ''} ${debugSel === i ? 'sel' : ''}`}
+                  >
+                    <i>{i + 1}</i>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectDebugLine(i)}
+                    >
+                      {l || ' '}
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Inline Edit Bar */}
+              {debugSel >= 0 && (
+                <div className="cd-edit">
+                  <input
+                    ref={debugInputRef}
+                    value={debugInput}
+                    onChange={(e) => setDebugInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSaveDebug()
+                    }}
+                    spellCheck={false}
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    aria-label="Edit line"
+                  />
+                  <button
+                    type="button"
+                    className="cd-ghost"
+                    onClick={handleSaveDebug}
+                  >
+                    Save
+                  </button>
+                </div>
+              )}
+
+              {/* Console Output */}
+              <div className="cd-out">
+                {debugDone ? (
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 cd-p">
+                      <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 stroke-[2.5] stroke-current fill-none shrink-0">
+                        <path d="M5 12l5 5 9-10" />
+                      </svg>
+                      <span>All fixed</span>
+                    </div>
+                    <div className="cd-t">Topic: {currentChallenge.topic}</div>
+                  </div>
+                ) : debugLeft === null ? (
+                  <span>Tap a line to edit.</span>
+                ) : debugLeft > 0 ? (
+                  <div className="flex items-center gap-2 cd-f">
+                    <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 stroke-[2.5] stroke-current fill-none shrink-0">
+                      <path d="M6 6l12 12M18 6L6 18" />
+                    </svg>
+                    <span>{debugLeft} still wrong</span>
+                  </div>
+                ) : (
+                  <span>Tap a line to edit.</span>
+                )}
+              </div>
+
+              {/* Bottom Sheet */}
+              <div className="cd-sheet">
+                <div className="cd-meta">
+                  <span>{currentIndex + 1} / {challenges.length}</span>
+                  <span>{debugLeft !== null ? `${debugLeft} left` : `${Object.keys(currentDrill.debug.fix).length} to fix`}</span>
+                </div>
+                <p className="cd-q">{currentDrill.debug.q}</p>
+                <div className="cd-row">
+                  <button
+                    type="button"
+                    className="cd-ghost"
+                    onClick={() => { buzz(); setShowDebugHint(!showDebugHint); }}
+                  >
+                    Hint
+                  </button>
+                  <button
+                    type="button"
+                    className="cd-btn"
+                    onClick={handleCheckDebug}
+                  >
+                    {debugDone ? 'Next' : 'Check'}
+                  </button>
+                </div>
+                {showDebugHint && (
+                  <div className="cd-hint">{currentDrill.debug.h}</div>
+                )}
+              </div>
+            </section>
+          )}
+
+          {examTab === 'order' && (
+            <section className="cd-view">
+              <div className="cd-code">
+                {orderShuffled.map((lineIdx, i) => (
+                  <div
+                    key={i}
+                    className={`cd-l ${orderRes[i] || ''} ${orderSel === i ? 'sel' : ''}`}
+                  >
+                    <i>{i + 1}</i>
+                    <button
+                      type="button"
+                      onClick={() => { buzz(); setOrderSel(i); }}
+                    >
+                      {orderLines[lineIdx]}
+                    </button>
+                    {orderSel === i && (
+                      <span className="cd-mv">
+                        <button
+                          type="button"
+                          aria-label="Move up"
+                          onClick={() => handleMoveOrder(-1)}
+                        >
+                          <svg viewBox="0 0 24 24" className="w-4 h-4 stroke-2 stroke-current fill-none shrink-0">
+                            <path d="M6 15l6-6 6 6" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Move down"
+                          onClick={() => handleMoveOrder(1)}
+                        >
+                          <svg viewBox="0 0 24 24" className="w-4 h-4 stroke-2 stroke-current fill-none shrink-0">
+                            <path d="M6 9l6 6 6-6" />
+                          </svg>
+                        </button>
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Console Output */}
+              <div className="cd-out">
+                {orderDone ? (
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 cd-p">
+                      <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 stroke-[2.5] stroke-current fill-none shrink-0">
+                        <path d="M5 12l5 5 9-10" />
+                      </svg>
+                      <span>Correct</span>
+                    </div>
+                    <div className="cd-t">Topic: {currentChallenge.topic}</div>
+                  </div>
+                ) : orderWrong === null ? (
+                  <span>Tap a line, then move it.</span>
+                ) : orderWrong > 0 ? (
+                  <div className="flex items-center gap-2 cd-f">
+                    <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 stroke-[2.5] stroke-current fill-none shrink-0">
+                      <path d="M6 6l12 12M18 6L6 18" />
+                    </svg>
+                    <span>{orderWrong} out of place</span>
+                  </div>
+                ) : (
+                  <span>Tap a line, then move it.</span>
+                )}
+              </div>
+
+              {/* Bottom Sheet */}
+              <div className="cd-sheet">
+                <div className="cd-meta">
+                  <span>{currentIndex + 1} / {challenges.length}</span>
+                  <span>{orderDone ? currentChallenge.topic : 'Topic hidden'}</span>
+                </div>
+                <p className="cd-q">{currentDrill.order.q || 'Put the lines in order.'}</p>
+                <div className="cd-row">
+                  <button
+                    type="button"
+                    className="cd-ghost"
+                    onClick={handleShuffleOrder}
+                  >
+                    Shuffle
+                  </button>
+                  <button
+                    type="button"
+                    className="cd-btn"
+                    onClick={handleCheckOrder}
+                  >
+                    {orderDone ? 'Next' : 'Check'}
+                  </button>
+                </div>
+              </div>
+            </section>
+          )}
+        </div>
+
+        {/* AI Practice Drawer */}
+        {currentChallenge && (
+          <AIPracticeDrawer
+            kind="code"
+            deckId={deckId || 'code-lab'}
+            language={langKey as any}
+            currentScreenContext={{
+              screen: 'code',
+              topic: currentChallenge.topic,
+              activeTab: 'ide',
+              mode: examTab,
+              language: langKey,
+              userCode: examTab === 'build' ? buildCode : (examTab === 'debug' ? debugLines.join('\n') : orderLines.join('\n')),
+              expectedOutput: currentChallenge.scenario?.simulatedOutput || currentChallenge.bugHunter?.simulatedOutput,
+              bugDescriptions: currentChallenge.bugHunter?.bugDescriptions,
+              feedbackStatus: examTab === 'build' ? (buildDone ? 'success' : 'idle') : (examTab === 'debug' ? (debugDone ? 'success' : 'idle') : (orderDone ? 'success' : 'idle')),
+              feedbackOutput: buildDone || debugDone || orderDone ? 'Verified' : '',
+            }}
+          />
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="codelab-theme min-h-screen bg-[var(--bg)] text-[var(--text)] antialiased transition-colors selection:bg-[#2fd16a] selection:text-black pb-24">
+      {/* SCOPED STYLES MATCHING MathLab_ Center of Mass.html WITH GREEN CODELAB THEME */}
+      <style>{`
+        .codelab-theme {
+          --bg: #050505;
+          --card: #101010;
+          --card2: #191919;
+          --text: #ffffff;
+          --muted: #a8a8a8;
+          --line: #222222;
+          --green: #2fd16a;
+          --okbg: #17582d;
+          --okt: #ffffff;
+          --hero: #052e16;
+        }
+        @media (prefers-color-scheme: light) {
+          :root:not([data-theme="dark"]) .codelab-theme {
+            --bg: #f4f4f4;
+            --card: #ffffff;
+            --card2: #f0f0f0;
+            --text: #111111;
+            --muted: #666666;
+            --line: #e2e2e2;
+            --green: #14a44d;
+            --okbg: #17703a;
+            --okt: #ffffff;
+            --hero: #dcfce7;
+          }
+        }
+        :root[data-theme="light"] .codelab-theme {
+          --bg: #f4f4f4;
+          --card: #ffffff;
+          --card2: #f0f0f0;
+          --text: #111111;
+          --muted: #666666;
+          --line: #e2e2e2;
+          --green: #14a44d;
+          --okbg: #17703a;
+          --okt: #ffffff;
+          --hero: #dcfce7;
+        }
+
+        .codelab-theme main {
+          max-width: 640px;
+          width: 100%;
+          margin: 0 auto;
+          padding: max(calc(env(safe-area-inset-top, 0px) + 12px), 20px) 14px 48px;
+          min-width: 0;
+          box-sizing: border-box;
+          overflow-x: hidden;
+        }
+        .codelab-theme .bar {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 4px 2px 14px;
+        }
+        .codelab-theme .logo {
+          flex: 1;
+          font-size: 1.7rem;
+          font-weight: 900;
+          letter-spacing: -.03em;
+          color: var(--green);
+          text-transform: uppercase;
+        }
+        .codelab-theme .avatar {
+          width: 36px;
+          height: 36px;
+          border-radius: 50%;
+          background: var(--green);
+          display: grid;
+          place-items: center;
+          color: #000;
+          font-weight: 800;
+          font-size: 0.85rem;
+        }
+        .codelab-theme .hero {
+          border-radius: 16px;
+          padding: 20px 16px 14px;
+          margin: 0 0 12px;
+          background: linear-gradient(170deg, var(--hero) 0%, var(--card) 100%);
+          border: 1px solid var(--line);
+          max-width: 100%;
+          min-width: 0;
+          overflow: hidden;
+          box-sizing: border-box;
+        }
+        .codelab-theme .tag {
+          font-size: .75rem;
+          font-weight: 800;
+          letter-spacing: .12em;
+          text-transform: uppercase;
+          color: var(--green);
+          margin: 0 0 8px;
+        }
+        .codelab-theme h1 {
+          font-size: 1.65rem;
+          line-height: 1.15;
+          font-weight: 900;
+          margin: 0 0 12px;
+          letter-spacing: -.02em;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          max-width: 100%;
+        }
+        .codelab-theme .chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-bottom: 10px;
+        }
+        .codelab-theme .chip {
+          background: var(--card2);
+          border-radius: 999px;
+          padding: 5px 14px;
+          font-size: .85rem;
+          font-weight: 600;
+        }
+        .codelab-theme .card {
+          background: var(--card);
+          border: 1px solid var(--line);
+          border-radius: 14px;
+          padding: 16px;
+          margin: 0 0 12px;
+          max-width: 100%;
+          min-width: 0;
+          box-sizing: border-box;
+          overflow: hidden;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+        }
+        .codelab-theme .card * {
+          box-sizing: border-box;
+        }
+        .codelab-theme .head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin: 0 0 12px;
+          max-width: 100%;
+          min-width: 0;
+        }
+        .codelab-theme h2 {
+          font-size: 1.15rem;
+          font-weight: 800;
+          margin: 0;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          min-width: 0;
+        }
+        .codelab-theme .btn {
+          background: none;
+          border: 0;
+          color: var(--green);
+          font: 600 .95rem system-ui, sans-serif;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          padding: 6px;
+          cursor: pointer;
+        }
+        .codelab-theme p {
+          margin: 0;
+        }
+        .codelab-theme .lab {
+          font-size: .72rem;
+          font-weight: 700;
+          color: var(--muted);
+          margin: 0 0 6px;
+          text-transform: uppercase;
+          letter-spacing: .1em;
+        }
+        .codelab-theme .eqbox {
+          background: var(--card2);
+          border-radius: 10px;
+          padding: 12px 14px;
+          font: 0.95rem/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+          overflow-x: auto;
+          overflow-y: hidden;
+          max-width: 100%;
+          min-width: 0;
+          box-sizing: border-box;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          -webkit-overflow-scrolling: touch;
+        }
+        .codelab-theme .frm {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+          min-width: 0;
+          max-width: 100%;
+        }
+        .codelab-theme .frm > div {
+          flex: 1 1 130px;
+          min-width: 0;
+          max-width: 100%;
+        }
+        .codelab-theme .frm > div:first-child {
+          flex: 2 1 250px;
+          min-width: 0;
+          max-width: 100%;
+        }
+        .codelab-theme .final {
+          background: var(--okbg);
+          color: var(--okt);
+          border-radius: 12px;
+          padding: 16px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin: 0 0 12px;
+          max-width: 100%;
+          min-width: 0;
+          box-sizing: border-box;
+          overflow: hidden;
+        }
+        .codelab-theme .final > div:first-child {
+          flex: 1;
+          min-width: 0;
+          overflow: hidden;
+        }
+        .codelab-theme .final small {
+          display: block;
+          font-size: .72rem;
+          font-weight: 800;
+          letter-spacing: .14em;
+          text-transform: uppercase;
+          opacity: .9;
+        }
+        .codelab-theme .final .v {
+          font: 600 1.35rem/1.3 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+          overflow-x: auto;
+          overflow-wrap: anywhere;
+          word-break: break-all;
+          max-width: 100%;
+          min-width: 0;
+        }
+        .codelab-theme .chk {
+          width: 44px;
+          height: 44px;
+          border-radius: 50%;
+          border: 2px solid #5be08c;
+          display: grid;
+          place-items: center;
+          color: #5be08c;
+          flex: none;
+        }
+        .codelab-theme .big {
+          border-left: 4px solid var(--green);
+        }
+        .codelab-theme .sym {
+          display: grid;
+          grid-template-columns: minmax(0, 5.5rem) minmax(0, 1fr);
+          min-width: 0;
+          max-width: 100%;
+          overflow-x: auto;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+        }
+        .codelab-theme .sym > * {
+          padding: 10px 0;
+          border-top: 1px solid var(--line);
+          min-width: 0;
+        }
+        .codelab-theme .sym > :nth-child(-n+2) {
+          border-top: 0;
+        }
+        .codelab-theme .sym .s {
+          font: 600 0.95rem ui-monospace, SFMono-Regular, Menlo, monospace;
+          overflow-wrap: anywhere;
+          word-break: break-all;
+          min-width: 0;
+        }
+        .codelab-theme .sym b {
+          display: block;
+          font-weight: 600;
+        }
+        .codelab-theme .sym .u {
+          display: block;
+          color: var(--green);
+          font-size: .85rem;
+          font-weight: 600;
+        }
       `}</style>
 
       <main>
@@ -2448,7 +2810,7 @@ export default function CodeLabView({
             <button
               onClick={() => setLabStyle('exam')}
               className={`px-3 py-1 rounded text-xs font-semibold transition-all cursor-pointer ${
-                labStyle === 'exam'
+                (labStyle as string) === 'exam'
                   ? 'bg-[var(--green)] text-black font-bold'
                   : 'text-[var(--muted)] hover:text-[var(--text)]'
               }`}
@@ -2461,7 +2823,7 @@ export default function CodeLabView({
           <div className="avatar">CL</div>
         </div>
 
-        {/* PROMINENT CARD SWITCHER BAR (Direct top buttons to access all challenges/cards) */}
+        {/* PROMINENT CARD SWITCHER BAR */}
         {challenges.length > 1 && (
           <div className="mb-3.5 p-2 rounded-2xl bg-[var(--card)] border border-[var(--line)] shadow-sm flex items-center justify-between gap-2 select-none">
             <button
@@ -2474,7 +2836,7 @@ export default function CodeLabView({
               <span className="hidden sm:inline">Prev</span>
             </button>
 
-            {/* Direct Card Pills: [Card 1] [Card 2] [Card 3] */}
+            {/* Direct Card Pills */}
             <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 px-1 no-scrollbar">
               {challenges.map((c, i) => (
                 <button
@@ -2504,17 +2866,16 @@ export default function CodeLabView({
           </div>
         )}
 
-        {/* HERO SECTION */}
+        {/* HERO SECTION (Notes Mode only) */}
         <header className="hero">
           <p className="tag">Notebook · Challenge {currentIndex + 1} of {challenges.length}</p>
           <h1>{currentChallenge.topic}</h1>
           <div className="chips">
             <span className="chip">{langKey.toUpperCase()}</span>
             <span className="chip">{currentChallenge.category || 'Algorithms'}</span>
-            <span className="chip">{labStyle === 'exam' ? (mode === 'bug_hunter' ? 'Bug Hunter' : mode === 'practice' ? 'Practice' : 'Build') : 'Notes Style'}</span>
+            <span className="chip">Notes Style</span>
           </div>
 
-          {/* Signature / Blueprint preview */}
           {syntaxBlueprint && (
             <div className="eqbox mt-2 text-xs sm:text-sm">
               <code>{formatCodeSnippet(syntaxBlueprint)}</code>
@@ -2523,59 +2884,57 @@ export default function CodeLabView({
         </header>
 
         {/* ===================== NOTES STYLE ===================== */}
-        {labStyle === 'notes' && (
-          <>
-            {/* 1. IN PLAIN WORDS CARD */}
-            {(() => {
-              const rawWords = currentChallenge.codeLabData?.in_plain_words || currentChallenge.description || ''
-              const lines = rawWords.split('\n').map(l => l.trim()).filter(Boolean)
-              return (
-                <section className="card">
-                  <div className="head">
-                    <h2>In plain words</h2>
-                    <button
-                      onClick={() => {
-                        if (activeSpeakingCard === 'in_plain_words') {
-                          stopTTS()
-                          setActiveSpeakingCard(null)
-                        } else {
-                          setActiveSpeakingCard('in_plain_words')
-                          speakSingle(rawWords)
-                        }
-                      }}
-                      className="btn text-xs"
-                      title="Read intuition"
-                    >
-                      {activeSpeakingCard === 'in_plain_words' ? <VolumeX size={15} /> : <Volume2 size={15} />}
-                      <span>{activeSpeakingCard === 'in_plain_words' ? 'Stop' : 'Listen'}</span>
-                    </button>
-                  </div>
-                  <div className="space-y-2">
-                    {lines.map((paragraph, pIdx) => {
-                      const isProblem = paragraph.toLowerCase().startsWith('problem scenario:')
-                      return (
-                        <p
-                          key={pIdx}
-                          className={`leading-relaxed ${
-                            isProblem
-                              ? 'p-2.5 rounded-lg bg-[var(--hero)] border border-[var(--green)]/30 text-emerald-200 text-xs sm:text-sm font-medium'
-                              : 'text-sm text-[var(--text)]'
-                          }`}
-                        >
-                          <MathFormattedText text={paragraph} />
-                        </p>
-                      )
-                    })}
-                  </div>
-                </section>
-              )
-            })()}
+        {(() => {
+          const rawWords = currentChallenge.codeLabData?.in_plain_words || currentChallenge.description || ''
+          const lines = rawWords.split('\n').map(l => l.trim()).filter(Boolean)
+          const givenText = currentChallenge.codeLabData?.given || currentChallenge.scenario?.scenarioPrompt || ''
+          const script = currentChallenge.codeLabData?.script_complete || currentChallenge.codeLabData?.script_html || currentChallenge.scenario?.sampleSolution || ''
+          const vars = currentChallenge.codeLabData?.variations || []
 
-            {/* 2. GIVEN & PROBLEM SCENARIO CARD */}
-            {(() => {
-              const givenText = currentChallenge.codeLabData?.given || currentChallenge.scenario?.scenarioPrompt || ''
-              if (!givenText) return null
-              return (
+          return (
+            <>
+              {/* 1. IN PLAIN WORDS CARD */}
+              <section className="card">
+                <div className="head">
+                  <h2>In plain words</h2>
+                  <button
+                    onClick={() => {
+                      if (activeSpeakingCard === 'in_plain_words') {
+                        stopTTS()
+                        setActiveSpeakingCard(null)
+                      } else {
+                        setActiveSpeakingCard('in_plain_words')
+                        speakSingle(rawWords)
+                      }
+                    }}
+                    className="btn text-xs"
+                    title="Read intuition"
+                  >
+                    {activeSpeakingCard === 'in_plain_words' ? <VolumeX size={15} /> : <Volume2 size={15} />}
+                    <span>{activeSpeakingCard === 'in_plain_words' ? 'Stop' : 'Listen'}</span>
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {lines.map((paragraph, pIdx) => {
+                    const isProblem = paragraph.toLowerCase().startsWith('problem scenario:')
+                    return (
+                      <p
+                        key={pIdx}
+                        className={`leading-relaxed ${
+                          isProblem
+                            ? 'p-2.5 rounded-lg bg-[var(--hero)] border border-[var(--green)]/30 text-emerald-200 text-xs sm:text-sm font-medium'
+                            : 'text-sm text-[var(--text)]'
+                        }`}
+                      >
+                        <MathFormattedText text={paragraph} />
+                      </p>
+                    )
+                  })}
+                </div>
+              </section>
+
+              {/* 2. GIVEN & PROBLEM SCENARIO CARD */}
+              {givenText && (
                 <section className="card">
                   <div className="head">
                     <div>
@@ -2591,38 +2950,34 @@ export default function CodeLabView({
                     <MathFormattedText text={givenText} />
                   </div>
                 </section>
-              )
-            })()}
+              )}
 
-            {/* 3. STARTER & SYNTAX BLUEPRINT CARD */}
-            <section className="card">
-              <div className="head">
-                <div>
-                  <p className="lab">Syntax Blueprint &amp; Starter</p>
-                  <h2>Starter Template</h2>
-                </div>
-              </div>
-              {syntaxBlueprint && (
-                <div className="mb-2.5">
-                  <p className="lab">Master Pattern</p>
-                  <div className="eqbox text-xs">
-                    <code>{syntaxBlueprint}</code>
+              {/* 3. STARTER & SYNTAX BLUEPRINT CARD */}
+              <section className="card">
+                <div className="head">
+                  <div>
+                    <p className="lab">Syntax Blueprint &amp; Starter</p>
+                    <h2>Starter Template</h2>
                   </div>
                 </div>
-              )}
-              <div>
-                <p className="lab">Starter Skeleton</p>
-                <div className="eqbox text-xs">
-                  <code>{formatCodeSnippet(currentChallenge.scenario?.starterTemplate || '')}</code>
+                {syntaxBlueprint && (
+                  <div className="mb-2.5">
+                    <p className="lab">Master Pattern</p>
+                    <div className="eqbox text-xs">
+                      <code>{syntaxBlueprint}</code>
+                    </div>
+                  </div>
+                )}
+                <div>
+                  <p className="lab">Starter Skeleton</p>
+                  <div className="eqbox text-xs">
+                    <code>{formatCodeSnippet(currentChallenge.scenario?.starterTemplate || '')}</code>
+                  </div>
                 </div>
-              </div>
-            </section>
+              </section>
 
-            {/* 4. COMPLETE EXECUTABLE SCRIPT */}
-            {(() => {
-              const script = currentChallenge.codeLabData?.script_complete || currentChallenge.codeLabData?.script_html || currentChallenge.scenario?.sampleSolution || ''
-              if (!script) return null
-              return (
+              {/* 4. COMPLETE EXECUTABLE SCRIPT */}
+              {script && (
                 <section className="card">
                   <div className="head">
                     <div>
@@ -2640,14 +2995,10 @@ export default function CodeLabView({
                     </pre>
                   </div>
                 </section>
-              )
-            })()}
+              )}
 
-            {/* 5. CODE VARIATIONS CARD */}
-            {(() => {
-              const vars = currentChallenge.codeLabData?.variations || []
-              if (vars.length === 0) return null
-              return (
+              {/* 5. CODE VARIATIONS CARD */}
+              {vars.length > 0 && (
                 <section className="card">
                   <div className="head">
                     <div>
@@ -2674,396 +3025,55 @@ export default function CodeLabView({
                     ))}
                   </div>
                 </section>
-              )
-            })()}
+              )}
 
-            {/* 6. FINAL EXPECTED OUTPUT BANNER */}
-            <section className="final">
-              <div>
-                <small>Expected Output</small>
-                <div className="v">{finalExpected}</div>
-              </div>
-              <div className="chk">
-                <Check size={24} />
-              </div>
-            </section>
-
-            {/* 7. BIG IDEA CARD */}
-            <section className="card big">
-              <h2 style={{ marginBottom: '8px' }}>Big idea</h2>
-              <p className="leading-relaxed">
-                <MathFormattedText
-                  text={
-                    currentChallenge.codeLabData?.in_plain_words
-                      ? `Master the fundamental flow of ${currentChallenge.topic}. Pay attention to edge conditions and return signatures.`
-                      : 'Consistent code architecture and proper contract handling prevent runtime exceptions and memory degradation.'
-                  }
-                />
-              </p>
-            </section>
-
-            {/* 8. PARAMETERS AND TYPES CARD */}
-            {dataMap.length > 0 && (
-              <section className="card">
-                <h2 style={{ marginBottom: '6px' }}>Parameters and Types</h2>
-                <div className="sym">
-                  {dataMap.map((row, idx) => (
-                    <React.Fragment key={idx}>
-                      <span className="s font-mono text-xs">{row.fn || row.section}</span>
-                      <div>
-                        <b>{row.concept}</b>
-                        <span className="u">
-                          <MathFormattedText text={row.memory_effect || ''} />
-                        </span>
-                      </div>
-                    </React.Fragment>
-                  ))}
+              {/* 6. FINAL EXPECTED OUTPUT BANNER */}
+              <section className="final">
+                <div>
+                  <small>Expected Output</small>
+                  <div className="v">{finalExpected}</div>
+                </div>
+                <div className="chk">
+                  <Check size={24} />
                 </div>
               </section>
-            )}
-          </>
-        )}
 
-        {/* ===================== EXAM STYLE (CODEDRILL ANTI-SLOP) ===================== */}
-        {labStyle === 'exam' && (
-          <div className="cd-app">
-            {/* Segmented Tabs (Build, Debug, Reorder) */}
-            <div className="cd-seg" role="tablist">
-              <button
-                role="tab"
-                aria-selected={examTab === 'build'}
-                onClick={() => { buzz(); setExamTab('build'); }}
-              >
-                Build
-              </button>
-              <button
-                role="tab"
-                aria-selected={examTab === 'debug'}
-                onClick={() => { buzz(); setExamTab('debug'); }}
-              >
-                Debug
-              </button>
-              <button
-                role="tab"
-                aria-selected={examTab === 'order'}
-                onClick={() => { buzz(); setExamTab('order'); }}
-              >
-                Reorder
-              </button>
-              <i style={{ transform: `translateX(${['build', 'debug', 'order'].indexOf(examTab) * 100}%)` }} />
-            </div>
+              {/* 7. BIG IDEA CARD */}
+              <section className="card big">
+                <h2 style={{ marginBottom: '8px' }}>Big idea</h2>
+                <p className="leading-relaxed">
+                  <MathFormattedText
+                    text={
+                      currentChallenge.codeLabData?.in_plain_words
+                        ? `Master the fundamental flow of ${currentChallenge.topic}. Pay attention to edge conditions and return signatures.`
+                        : 'Consistent code architecture and proper contract handling prevent runtime exceptions and memory degradation.'
+                    }
+                  />
+                </p>
+              </section>
 
-            {/* TAB 1: BUILD */}
-            {examTab === 'build' && (
-              <section className="cd-view">
-                <div className="cd-code">
-                  <div className="cd-ed">
-                    <div className="cd-gut">
-                      {Array.from({ length: Math.max(1, buildCode.split('\n').length) }, (_, i) => i + 1).join('\n')}
-                    </div>
-                    <textarea
-                      ref={buildTextareaRef}
-                      value={buildCode}
-                      onChange={(e) => {
-                        setBuildCode(e.target.value)
-                        setBuildResults(null)
-                        setBuildDone(false)
-                      }}
-                      spellCheck={false}
-                      autoCapitalize="off"
-                      autoCorrect="off"
-                      aria-label="Code Editor"
-                      className="cd-ta"
-                      placeholder="// Enter program logic here..."
-                    />
-                  </div>
-                </div>
-
-                {/* Quick Keys Toolbar */}
-                <div className="cd-keys">
-                  {[
-                    ['Tab', <svg key="tab" viewBox="0 0 24 24" className="w-4 h-4 stroke-2 stroke-current fill-none shrink-0"><path d="M4 12h14M13 7l5 5-5 5M20 5v14" /></svg>],
-                    ['(', '('],
-                    [')', ')'],
-                    ['[', '['],
-                    [']', ']'],
-                    ['{', '{'],
-                    ['}', '}'],
-                    [':', ':'],
-                    ['"', '"'],
-                    ['=', '='],
-                    ['+', '+'],
-                    ['*', '*'],
-                    ['%', '%'],
-                    ['>', '>'],
-                    ['#', '#'],
-                    ['_', '_'],
-                  ].map(([kLabel, icon]) => (
-                    <button
-                      key={String(kLabel)}
-                      type="button"
-                      aria-label={String(kLabel)}
-                      onClick={() => handleQuickKey(String(kLabel))}
-                    >
-                      {icon}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Console Output */}
-                <div className="cd-out">
-                  {buildResults === null ? (
-                    <span>Run to check.</span>
-                  ) : (
-                    <div className="space-y-1">
-                      {buildResults.map((r, i) => (
-                        <div key={i} className={`flex items-center gap-2 ${r.ok ? 'cd-p' : 'cd-f'}`}>
-                          {r.ok ? (
-                            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 stroke-[2.5] stroke-current fill-none shrink-0">
-                              <path d="M5 12l5 5 9-10" />
-                            </svg>
-                          ) : (
-                            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 stroke-[2.5] stroke-current fill-none shrink-0">
-                              <path d="M6 6l12 12M18 6L6 18" />
-                            </svg>
-                          )}
-                          <span>{r.label}</span>
+              {/* 8. PARAMETERS AND TYPES CARD */}
+              {dataMap.length > 0 && (
+                <section className="card">
+                  <h2 style={{ marginBottom: '6px' }}>Parameters and Types</h2>
+                  <div className="sym">
+                    {dataMap.map((row, idx) => (
+                      <React.Fragment key={idx}>
+                        <span className="s font-mono text-xs">{row.fn || row.section}</span>
+                        <div>
+                          <b>{row.concept}</b>
+                          <span className="u">
+                            <MathFormattedText text={row.memory_effect || ''} />
+                          </span>
                         </div>
-                      ))}
-                      {buildDone && (
-                        <div className="cd-t">Topic: {currentChallenge.topic}</div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Bottom Sheet */}
-                <div className="cd-sheet">
-                  <div className="cd-meta">
-                    <span>{currentIndex + 1} / {challenges.length}</span>
-                    <span>{buildDone ? currentChallenge.topic : 'Topic hidden'}</span>
+                      </React.Fragment>
+                    ))}
                   </div>
-                  <p className="cd-q">{currentDrill.build.q}</p>
-                  <div className="cd-row">
-                    <button
-                      type="button"
-                      className="cd-ghost"
-                      onClick={() => { buzz(); setShowBuildHint(!showBuildHint); }}
-                    >
-                      Hint
-                    </button>
-                    <button
-                      type="button"
-                      className="cd-btn"
-                      onClick={handleRunBuild}
-                    >
-                      {buildDone ? 'Next' : 'Run'}
-                    </button>
-                  </div>
-                  {showBuildHint && (
-                    <div className="cd-hint">{currentDrill.build.h}</div>
-                  )}
-                </div>
-              </section>
-            )}
-
-            {/* TAB 2: DEBUG */}
-            {examTab === 'debug' && (
-              <section className="cd-view">
-                <div className="cd-code">
-                  {debugLines.map((l, i) => (
-                    <div
-                      key={i}
-                      className={`cd-l ${debugRes[i] || ''} ${debugSel === i ? 'sel' : ''}`}
-                    >
-                      <i>{i + 1}</i>
-                      <button
-                        type="button"
-                        onClick={() => handleSelectDebugLine(i)}
-                      >
-                        {l || ' '}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Inline Edit Bar */}
-                {debugSel >= 0 && (
-                  <div className="cd-edit">
-                    <input
-                      ref={debugInputRef}
-                      value={debugInput}
-                      onChange={(e) => setDebugInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleSaveDebug()
-                      }}
-                      spellCheck={false}
-                      autoCapitalize="off"
-                      autoCorrect="off"
-                      aria-label="Edit line"
-                    />
-                    <button
-                      type="button"
-                      className="cd-ghost"
-                      onClick={handleSaveDebug}
-                    >
-                      Save
-                    </button>
-                  </div>
-                )}
-
-                {/* Console Output */}
-                <div className="cd-out">
-                  {debugDone ? (
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 cd-p">
-                        <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 stroke-[2.5] stroke-current fill-none shrink-0">
-                          <path d="M5 12l5 5 9-10" />
-                        </svg>
-                        <span>All fixed</span>
-                      </div>
-                      <div className="cd-t">Topic: {currentChallenge.topic}</div>
-                    </div>
-                  ) : debugLeft === null ? (
-                    <span>Tap a line to edit.</span>
-                  ) : debugLeft > 0 ? (
-                    <div className="flex items-center gap-2 cd-f">
-                      <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 stroke-[2.5] stroke-current fill-none shrink-0">
-                        <path d="M6 6l12 12M18 6L6 18" />
-                      </svg>
-                      <span>{debugLeft} still wrong</span>
-                    </div>
-                  ) : (
-                    <span>Tap a line to edit.</span>
-                  )}
-                </div>
-
-                {/* Bottom Sheet */}
-                <div className="cd-sheet">
-                  <div className="cd-meta">
-                    <span>{currentIndex + 1} / {challenges.length}</span>
-                    <span>{debugLeft !== null ? `${debugLeft} left` : `${Object.keys(currentDrill.debug.fix).length} to fix`}</span>
-                  </div>
-                  <p className="cd-q">{currentDrill.debug.q}</p>
-                  <div className="cd-row">
-                    <button
-                      type="button"
-                      className="cd-ghost"
-                      onClick={() => { buzz(); setShowDebugHint(!showDebugHint); }}
-                    >
-                      Hint
-                    </button>
-                    <button
-                      type="button"
-                      className="cd-btn"
-                      onClick={handleCheckDebug}
-                    >
-                      {debugDone ? 'Next' : 'Check'}
-                    </button>
-                  </div>
-                  {showDebugHint && (
-                    <div className="cd-hint">{currentDrill.debug.h}</div>
-                  )}
-                </div>
-              </section>
-            )}
-
-            {/* TAB 3: REORDER */}
-            {examTab === 'order' && (
-              <section className="cd-view">
-                <div className="cd-code">
-                  {orderShuffled.map((lineIdx, i) => (
-                    <div
-                      key={i}
-                      className={`cd-l ${orderRes[i] || ''} ${orderSel === i ? 'sel' : ''}`}
-                    >
-                      <i>{i + 1}</i>
-                      <button
-                        type="button"
-                        onClick={() => { buzz(); setOrderSel(i); }}
-                      >
-                        {orderLines[lineIdx]}
-                      </button>
-                      {orderSel === i && (
-                        <span className="cd-mv">
-                          <button
-                            type="button"
-                            aria-label="Move up"
-                            onClick={() => handleMoveOrder(-1)}
-                          >
-                            <svg viewBox="0 0 24 24" className="w-4 h-4 stroke-2 stroke-current fill-none shrink-0">
-                              <path d="M6 15l6-6 6 6" />
-                            </svg>
-                          </button>
-                          <button
-                            type="button"
-                            aria-label="Move down"
-                            onClick={() => handleMoveOrder(1)}
-                          >
-                            <svg viewBox="0 0 24 24" className="w-4 h-4 stroke-2 stroke-current fill-none shrink-0">
-                              <path d="M6 9l6 6 6-6" />
-                            </svg>
-                          </button>
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Console Output */}
-                <div className="cd-out">
-                  {orderDone ? (
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 cd-p">
-                        <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 stroke-[2.5] stroke-current fill-none shrink-0">
-                          <path d="M5 12l5 5 9-10" />
-                        </svg>
-                        <span>Correct</span>
-                      </div>
-                      <div className="cd-t">Topic: {currentChallenge.topic}</div>
-                    </div>
-                  ) : orderWrong === null ? (
-                    <span>Tap a line, then move it.</span>
-                  ) : orderWrong > 0 ? (
-                    <div className="flex items-center gap-2 cd-f">
-                      <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 stroke-[2.5] stroke-current fill-none shrink-0">
-                        <path d="M6 6l12 12M18 6L6 18" />
-                      </svg>
-                      <span>{orderWrong} out of place</span>
-                    </div>
-                  ) : (
-                    <span>Tap a line, then move it.</span>
-                  )}
-                </div>
-
-                {/* Bottom Sheet */}
-                <div className="cd-sheet">
-                  <div className="cd-meta">
-                    <span>{currentIndex + 1} / {challenges.length}</span>
-                    <span>{orderDone ? currentChallenge.topic : 'Topic hidden'}</span>
-                  </div>
-                  <p className="cd-q">{currentDrill.order.q || 'Put the lines in order.'}</p>
-                  <div className="cd-row">
-                    <button
-                      type="button"
-                      className="cd-ghost"
-                      onClick={handleShuffleOrder}
-                    >
-                      Shuffle
-                    </button>
-                    <button
-                      type="button"
-                      className="cd-btn"
-                      onClick={handleCheckOrder}
-                    >
-                      {orderDone ? 'Next' : 'Check'}
-                    </button>
-                  </div>
-                </div>
-              </section>
-            )}
-          </div>
-        )}
+                </section>
+              )}
+            </>
+          )
+        })()}
       </main>
 
       {/* AI Practice Drawer */}
@@ -3075,14 +3085,14 @@ export default function CodeLabView({
           currentScreenContext={{
             screen: 'code',
             topic: currentChallenge.topic,
-            activeTab: labStyle === 'notes' ? 'notebook' : 'ide',
-            mode,
+            activeTab: 'notebook',
+            mode: 'scenario',
             language: langKey,
-            userCode,
+            userCode: '',
             expectedOutput: currentChallenge.scenario?.simulatedOutput || currentChallenge.bugHunter?.simulatedOutput,
             bugDescriptions: currentChallenge.bugHunter?.bugDescriptions,
-            feedbackStatus: feedback.status,
-            feedbackOutput: feedback.output || feedback.message,
+            feedbackStatus: 'idle',
+            feedbackOutput: '',
           }}
         />
       )}

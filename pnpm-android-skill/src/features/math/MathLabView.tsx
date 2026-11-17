@@ -1028,27 +1028,32 @@ export default function MathLabView({ deckTitle = 'Math Lab', onBack, cards, dec
         }
         .mathlab-theme .grid {
           display: grid;
-          grid-template-columns: max-content max-content minmax(0, 1fr);
-          column-gap: .55em;
-          row-gap: .4em;
+          grid-template-columns: max-content max-content max-content;
+          column-gap: .65em;
+          row-gap: .45em;
           align-items: baseline;
-          min-width: 0;
-          max-width: 100%;
-          overflow-x: auto;
+          width: max-content;
+          min-width: 100%;
           box-sizing: border-box;
         }
         .mathlab-theme .grid .l {
           justify-self: end;
           text-align: right;
+          white-space: nowrap;
         }
         .mathlab-theme .grid .e {
           justify-self: center;
+          white-space: nowrap;
         }
         .mathlab-theme .grid .r {
-          min-width: 0;
-          max-width: 100%;
-          overflow-wrap: anywhere;
-          word-break: break-word;
+          white-space: nowrap;
+        }
+        .mathlab-theme .grid .l *,
+        .mathlab-theme .grid .e *,
+        .mathlab-theme .grid .r *,
+        .mathlab-theme .grid span {
+          overflow-x: visible !important;
+          overflow-y: visible !important;
         }
         .mathlab-theme .pair {
           grid-template-columns: repeat(2, max-content max-content max-content);
@@ -1512,18 +1517,20 @@ export default function MathLabView({ deckTitle = 'Math Lab', onBack, cards, dec
                             <FormattedMathNode expr={eqLines[0].right} />
                           </div>
                         ) : (
-                          <div className="eqbox grid">
-                            {eqLines.map((line, lIdx) => (
-                              <React.Fragment key={lIdx}>
-                                <span className="l">
-                                  <FormattedMathNode expr={line.left} />
-                                </span>
-                                <span className="e">{line.op}</span>
-                                <span className="r">
-                                  <FormattedMathNode expr={line.right} />
-                                </span>
-                              </React.Fragment>
-                            ))}
+                          <div className="eqbox overflow-x-auto">
+                            <div className="grid">
+                              {eqLines.map((line, lIdx) => (
+                                <React.Fragment key={lIdx}>
+                                  <span className="l">
+                                    <FormattedMathNode expr={line.left} />
+                                  </span>
+                                  <span className="e">{line.op}</span>
+                                  <span className="r">
+                                    <FormattedMathNode expr={line.right} />
+                                  </span>
+                                </React.Fragment>
+                              ))}
+                            </div>
                           </div>
                         )}
                       </div>
@@ -1729,14 +1736,16 @@ export default function MathLabView({ deckTitle = 'Math Lab', onBack, cards, dec
                           <div className="t">
                             <MathFormattedText text={st.explanation || `Step ${i + 1}`} />
                           </div>
-                          <div className="eqbox grid">
-                            {eqLines.map((line, lIdx) => (
-                              <React.Fragment key={lIdx}>
-                                <span className="l"><FormattedMathNode expr={line.left} /></span>
-                                <span className="e">{line.op}</span>
-                                <span className="r"><FormattedMathNode expr={line.right} /></span>
-                              </React.Fragment>
-                            ))}
+                          <div className="eqbox overflow-x-auto">
+                            <div className="grid">
+                              {eqLines.map((line, lIdx) => (
+                                <React.Fragment key={lIdx}>
+                                  <span className="l"><FormattedMathNode expr={line.left} /></span>
+                                  <span className="e">{line.op}</span>
+                                  <span className="r"><FormattedMathNode expr={line.right} /></span>
+                                </React.Fragment>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       </div>
