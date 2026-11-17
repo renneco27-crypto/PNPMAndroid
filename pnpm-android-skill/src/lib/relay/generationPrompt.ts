@@ -280,46 +280,55 @@ Already Emitted Fronts (do not duplicate or restate any of these):
   3. Any QUIZ questions (multiple_choice, true_false) built from that fact MUST test the corrected value and explicitly state the fix in the explanation.
 
 ======================================================================
-4. NOTE STYLE PRECEDENCE & 3D PERSONAL LEARNING GRAPH FORMAT
+4. NOTE STYLE PRECEDENCE & SELECTIVE 3D PERSONAL LEARNING GRAPH FORMAT
 ======================================================================
-When generating "keyword" study notes, DO NOT dump dry 1D verbatim paragraphs as the main note body. Instead, structure each "keyword" card using the **3D Personal Learning Graph (Mechanical HOW + Collapsible Verbatim Drawer)**:
-1. **Main Card Body = 3D Mechanical Analysis (Easy to Read & Understand)**:
-   - Open with **What Breaks Without It** ("what_breaks"): In 1-2 sentences, state what breaks, freezes, or fails without this concept, and give academic jargon a physical **Action-Noun Nickname** ("Slot Calculator", "Ceiling Line", "Octet Counter", "Traffic Cop").
-   - Use **Per-Item / Boundary or 3-Column Mechanical Tables** ("table"): Whenever items cross boundaries, compare modes, or step through numbers, organize them into a table ("Item | Where It Lives / Created | Crosses Boundary? | Who Uses It?" or "Pattern | Exact Mechanical Step | Speed / Result").
-   - Include a **2-Branch ASCII Flow Diagram** ("ascii_diagram") whenever a concept branches ("Path A vs Path B", "Fast Path vs Slow Path", or splitting a "3-in-1 Black Box" into sub-steps).
-   - Explain core terms and steps clearly ("definition", "steps", "formula", "example", "pros_cons") using the exact terminology from the source paired with concrete mechanical intuition.
-   - Close the analysis with a **3-Sentence Switch TL;DR** ("switch_tldr"):
-     * "match_path": Fast/normal/match case ("Same/Cached [X] -> Direct Action").
-     * "mismatch_path": Slow/collision/edge case ("Different/Missing [X] -> Fallback Action").
-     * "checker": Which rule/formula/component acts as the switch checker.
-2. **Bottom of Every Keyword Card = Exact Verbatim Source Block ("verbatim")**:
-   - ALWAYS append a final { "kind": "verbatim", "label": "Verbatim Source Wording", "slide": <slide_number>, "text": "<exact word-for-word text from the slide/document>" } block at the very end of "back_blocks".
-   - The UI renders this "verbatim" block inside a **collapsible drawer at the bottom of the note card** so the student reads the 3D mechanical breakdown first and can expand the exact professor/slide wording on demand.
-3. One keyword card per source slide or coherent topic block, strictly in source order.
-4. Include every examinable fact in that block (definitions, procedures, steps, formulas, tabular data, examples, conditions). Never pad with unrelated trivia.
-5. INCREMENTAL CONCEPT NUMBERING:
-   When numbering key concepts, slides, or subtopics (e.g., 'Key Concept 1', 'Key Concept 2', 'Key Concept 3' or 'source_slide'), use sequential 1-based incremental numbers (1, 2, 3...), NEVER repeating '1' across different cards.
-6. SEMANTIC CLUSTERING & INTERNAL ORDERING:
-   - Group cards by semantic domain so related concepts are contiguous (e.g. all Network Topology cards together, followed by all OSI and TCP/IP protocol cards together lower down).
-   - Within each semantic cluster: Table data and comparison matrices come FIRST, followed by definitions/procedures, and topic enumerations placed at the BOTTOM of that cluster.
+When generating "keyword" study notes, DO NOT dump dry 1D verbatim paragraphs as the main note body.
+CRITICAL AUDIT-FIRST RULE: DO NOT blindly force "what_breaks", tables, and ASCII diagrams onto every card!
+Before generating blocks for each card, FIRST AUDIT the topic to determine its true nature, and choose ONLY the 2 to 4 representation blocks from the Personal Learning Graph Menu below that genuinely fit the audited topic:
 
-STRUCTURED "back_blocks" FORMAT:
+• TOPIC AUDIT CRITERIA (CHOOSE ONLY WHAT FITS):
+1. Algorithmic / Systems / Protocol Failure Mode:
+   - Does this topic represent a system mechanism, protocol, or algorithm that freezes, crashes, drops packets, leaks memory, or corrupts data if omitted?
+   - IF YES: Include "what_breaks" (1-2 sentences with physical Action-Noun Nickname) and/or "switch_tldr" (Fast vs Fallback path).
+   - IF NO (e.g. definitions, historical facts, taxonomy overviews, formulas, properties): NEVER include "what_breaks"!
+2. Multi-Item Comparison / Boundary / Numerical Matrix:
+   - Does this topic compare multiple entities, contrast boundaries (RAM vs Wire, Client vs Server), or present numerical matrices/bins?
+   - IF YES: Include "table".
+   - IF NO: NEVER force an empty, trivial, or artificial table!
+3. Branching Decision / Dual Pipeline:
+   - Does the process branch into two distinct operational paths (Fast vs Slow, Cache Hit vs Miss, Base Case vs Recursive)?
+   - IF YES: Include "ascii_diagram".
+   - IF NO: Omit ASCII diagrams.
+4. Mathematical / Physics Equation:
+   - Does the topic define a formula or numerical calculation?
+   - IF YES: Include "formula" + zero-skip "example" with real numbers plugged in.
+5. Ordered Procedure / Lifecycle / Workflow:
+   - Does the topic describe sequential stages, phases, or algorithmic steps?
+   - IF YES: Include "steps" (items array).
+6. Core Term / Taxonomy / Fundamental Principle:
+   - Include "definition" with clear mechanical intuition and/or "note".
+7. Trade-offs / Design Decisions:
+   - Include "pros_cons" with "pros" and "cons" arrays.
+8. Exact Source Text (MANDATORY on EVERY card):
+   - ALWAYS append a final { "kind": "verbatim", "label": "Verbatim Source Wording", "slide": <slide_number>, "text": "<exact word-for-word text from the slide/document>" } block at the very end of "back_blocks". The UI has a dedicated top Verbatim tab that displays this original text 1:1.
+
+STRUCTURED "back_blocks" MENU (CHOOSE 2 TO 4 PER CARD):
 For every "keyword" card, output "back_blocks" as an array of typed block objects:
-- { "kind": "what_breaks", "label": "If You Do Nothing — What Breaks?", "nickname": "<Physical Action-Noun Nickname>", "text": "<1-2 sentences: what breaks, freezes, or fails without this concept>" }
-- { "kind": "ascii_diagram", "label": "2-Branch Mechanical Flow", "diagram": "[Input] ---> [Path A: Fast/Match] ---> [Result A]\\n        \\\\--> [Path B: Slow/Fallback] -> [Result B]" }
-- { "kind": "table", "label": "Mechanical / Boundary Breakdown", "columns": ["Item / Pattern", "Exact Mechanical Step / Where Created", "Result / Boundary"], "rows": [["R1A", "R1B", "R1C"], ["R2A", "R2B", "R2C"]] }
-  (If the source presents data, bins, numbers, or comparison matrices, ALWAYS group them into tables. Cell values may safely contain commas.)
 - { "kind": "definition", "term": "<Term Name (Action Nickname)>", "text": "<clear mechanical definition>" }
   (Renderer applies bold from "term". Do NOT emit ** markers inside back_blocks!)
-- { "kind": "steps", "label": "Zero-Skip Procedure", "items": ["Step 1 description", "Step 2 description"] }
+- { "kind": "steps", "label": "<Procedure / Lifecycle Name>", "items": ["Step 1 description", "Step 2 description"] }
   (Put each distinct step or phase in its own item array element; never pack several steps into a run-on string.)
-- { "kind": "formula", "label": "Calculation", "text": "12 / 3 = 4" }
-- { "kind": "example", "label": "Concrete Plug-In Example", "text": "<specific illustration with real numbers plugged in>" }
+- { "kind": "table", "label": "<Table Title>", "columns": ["Item / Pattern", "Exact Mechanical Step / Where Created", "Result / Boundary"], "rows": [["R1A", "R1B", "R1C"], ["R2A", "R2B", "R2C"]] }
+  (Use ONLY when data, bins, numbers, or comparison matrices naturally exist. Cell values may safely contain commas.)
+- { "kind": "formula", "label": "<Formula Title>", "text": "12 / 3 = 4" }
+- { "kind": "example", "label": "<Concrete Plug-In Example>", "text": "<specific illustration with real numbers plugged in>" }
+- { "kind": "what_breaks", "label": "If You Do Nothing — What Breaks?", "nickname": "<Physical Action-Noun Nickname>", "text": "<1-2 sentences: what breaks, freezes, or fails without this concept>" } (ONLY for mechanisms with real failure modes!)
+- { "kind": "ascii_diagram", "label": "<2-Branch Flow Name>", "diagram": "[Input] ---> [Path A: Fast/Match] ---> [Result A]\\n        \\\\--> [Path B: Slow/Fallback] -> [Result B]" } (ONLY for branching processes!)
+- { "kind": "switch_tldr", "label": "3-Sentence Switch TL;DR", "match_path": "<Fast/Match path>", "mismatch_path": "<Slow/Mismatch path>", "checker": "<The rule/tool that checks which path runs>" } (ONLY for two-way switches!)
 - { "kind": "pros_cons", "label": "Advantages & Disadvantages", "pros": ["Pro point 1", "Pro point 2"], "cons": ["Con point 1", "Con point 2"] }
-- { "kind": "switch_tldr", "label": "3-Sentence Switch TL;DR", "match_path": "<Fast/Match path>", "mismatch_path": "<Slow/Mismatch path>", "checker": "<The rule/tool that checks which path runs>" }
 - { "kind": "note", "text": "<additional remarks, caveats, or conditions>" }
 - { "kind": "verbatim", "label": "Verbatim Source Wording", "slide": 1, "text": "<EXACT word-for-word text extracted from the source slide/document>" }
-  (MANDATORY as the LAST block of every "keyword" card so the exact document wording is preserved in the collapsible bottom drawer!)
+  (MANDATORY as the LAST block of every "keyword" card!)
 
 Block Label Rules:
 - Never repeat the card front/heading inside block labels. Under a card titled "Equal-Frequency Binning", use labels such as "Procedure", "Bin Assignment", "Items per bin", NEVER "Equal-Frequency Binning Procedure".

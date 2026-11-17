@@ -1,14 +1,18 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Upload, Loader2, Sparkles, XCircle, FileText, Plus, Trash2, Eye } from 'lucide-react'
+import CreateDeckModalUI, { AttachedJsonDeck } from '@/ui/CreateDeckModalUI'
 import { handleUpload, handleMultipleUpload, UploadError } from '@/features/upload/uploadHandler'
+import { isJsonInput, extractJsonString } from '@/features/upload/jsonParser'
 import { useToastStore } from '@/store/toastStore'
 import { useUIStore } from '@/store/uiStore'
-import { useCreditsStore } from '@/store/creditsStore'
-import { openStripePayment } from '@/lib/stripePayment'
-import { soundEngine } from '@/utils/soundEngine'
+import { Capacitor } from '@capacitor/core'
+import { useRelayJobStore } from '@/store/relayJobStore'
+import { createBrowserSupabase } from '@/lib/supabase'
+import { Filesystem, Directory } from '@capacitor/filesystem'
+import { GENERATION_PROMPT_TEMPLATE, DEFAULT_CARD_TARGETS } from '@/lib/relay/generationPrompt'
+import { SharedFile, SharedFileEntry } from '@/components/ShareReceiver'
 
 type UploadState = 'idle' | 'dragover' | 'processing' | 'success' | 'error'
 
@@ -18,42 +22,375 @@ function formatFileSize(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
+function base64ToFile(base64: string, name: string, mimeType: string): File {
+  const byteChars = atob(base64)
+  const bytes = new Uint8Array(byteChars.length)
+  for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i)
+  return new File([bytes], name, { type: mimeType })
+}
+
+const CLAUDE_PROMPT_TEMPLATE = GENERATION_PROMPT_TEMPLATE
+  .replace('{{CARD_TARGETS}}', JSON.stringify(DEFAULT_CARD_TARGETS, null, 2))
+  .replace('{{TOPIC}}', '[INSERT TOPIC]')
+  .replace('{{SUBJECT}}', '[Academic Subject]')
+  .replace('{{CHAPTER}}', '[Chapter / Module]')
+  .replace('{{LESSON}}', '[Lesson Name]')
+  .replace('{{SOURCE_TEXT}}', '[Paste your lecture notes, slides, or study materials here]')
+  .replace('{{ALREADY_EMITTED_FRONTS}}', '(None - starting new deck generation)')
+
+const CLAUDE_NOTES_PROMPT_TEMPLATE = `Analyze the entire reference material and extract ALL information into structured, comprehensive 3D STUDY NOTES ONLY (Keyword cards for the Notes tab).
+
+======================================================================
+1. EXTRACTION & CARD GENERATION RULES
+======================================================================
+• Identify every distinct topic, section, theory, concept, formula, process, and key term.
+• Do NOT generate quiz questions, multiple choice, or true/false questions.
+• Generate EXCLUSIVELY "keyword" type cards for the Notes tab.
+• One keyword card per source slide or coherent topic block, strictly in source order.
+• The "front" MUST be the Topic / Keyword / Concept / Section title.
+• Always include "source_slide" (1-based integer).
+
+======================================================================
+2. MANDATORY TOPIC AUDIT & SELECTIVE GRAPH BLOCK ASSIGNMENT
+======================================================================
+CRITICAL RULE: DO NOT blindly force "what_breaks", tables, or ASCII diagrams onto every card!
+Before writing the blocks for each card, FIRST AUDIT the topic to determine its true pedagogical nature.
+Choose ONLY 2 to 4 representation blocks from the Personal Learning Graph Menu below that genuinely fit the topic after auditing:
+
+• TOPIC AUDIT CRITERIA (CHOOSE ONLY WHAT FITS):
+1. Algorithmic / Systems / Protocol Failure Mode:
+   - Does this topic represent a system mechanism, protocol, or algorithm that freezes, crashes, drops packets, leaks memory, or corrupts data if omitted?
+   - IF YES: Include "what_breaks" (1-2 sentences with physical Action-Noun Nickname) and/or "switch_tldr" (Fast vs Fallback path).
+   - IF NO (e.g. definitions, historical facts, taxonomy overviews, formulas, properties): NEVER include "what_breaks"!
+2. Multi-Item Comparison / Boundary / Numerical Matrix:
+   - Does this topic compare multiple entities, contrast boundaries (RAM vs Wire, Client vs Server), or present numerical matrices/bins?
+   - IF YES: Include "table".
+   - IF NO: NEVER force an empty, trivial, or artificial table!
+3. Branching Decision / Dual Pipeline:
+   - Does the process branch into two distinct operational paths (Fast vs Slow, Cache Hit vs Miss, Base Case vs Recursive)?
+   - IF YES: Include "ascii_diagram".
+   - IF NO: Omit ASCII diagrams.
+4. Mathematical / Physics Equation:
+   - Does the topic define a formula or numerical calculation?
+   - IF YES: Include "formula" + zero-skip "example" with real numbers plugged in.
+5. Ordered Procedure / Lifecycle / Workflow:
+   - Does the topic describe sequential stages, phases, or algorithmic steps?
+   - IF YES: Include "steps" (items array).
+6. Core Term / Taxonomy / Fundamental Principle:
+   - Include "definition" with clear mechanical intuition and/or "note".
+7. Trade-offs / Design Decisions:
+   - Include "pros_cons" with "pros" and "cons" arrays.
+8. Exact Source Text (MANDATORY on EVERY card):
+   - ALWAYS include "verbatim" as the final block containing the EXACT word-for-word text from the slide/document. The UI has a dedicated top Verbatim tab that displays this original text 1:1.
+
+======================================================================
+3. PERSONAL LEARNING GRAPH BLOCK MENU (SELECT 2 TO 4 PER CARD)
+======================================================================
+- { "kind": "definition", "term": "<Term Name (Action Nickname)>", "text": "<clear mechanical definition>" }
+- { "kind": "steps", "label": "<Procedure / Lifecycle Name>", "items": ["Step 1 description", "Step 2 description"] }
+- { "kind": "table", "label": "<Table Title>", "columns": ["Col 1", "Col 2", "Col 3"], "rows": [["R1A", "R1B", "R1C"], ["R2A", "R2B", "R2C"]] }
+- { "kind": "formula", "label": "<Formula Title>", "text": "<calculation or equation in LaTeX or plain math>" }
+- { "kind": "example", "label": "<Concrete Plug-In Example>", "text": "<specific illustration with plugged-in values>" }
+- { "kind": "what_breaks", "label": "If You Do Nothing — What Breaks?", "nickname": "<Action-Noun Nickname>", "text": "<1-2 sentences: what breaks or fails>" } (ONLY for mechanisms with real failure modes!)
+- { "kind": "ascii_diagram", "label": "<2-Branch Flow Name>", "diagram": "[Input] ---> [Path A: Fast/Match] ---> [Result A]\n        \\--> [Path B: Slow/Fallback] -> [Result B]" } (ONLY for branching processes!)
+- { "kind": "switch_tldr", "label": "3-Sentence Switch TL;DR", "match_path": "<Fast/Match path>", "mismatch_path": "<Slow/Fallback path>", "checker": "<The checker rule/tool>" } (ONLY for decision switches!)
+- { "kind": "pros_cons", "label": "Advantages & Disadvantages", "pros": ["Pro point 1"], "cons": ["Con point 1"] }
+- { "kind": "note", "text": "<critical caveats, boundaries, or context>" }
+- { "kind": "verbatim", "label": "Verbatim Source Wording", "slide": <1-based slide number>, "text": "<EXACT word-for-word text from slide/document>" } (MANDATORY as the last block)
+
+======================================================================
+4. CARD LIMIT & HISTORICAL TIMELINE
+======================================================================
+• Generate up to a maximum of 130 keyword note cards total. Do NOT exceed 130 cards.
+• HISTORICAL TIMELINE CARD: If the source contains dated historical events, add one additional keyword card at the end titled "Chronological Timeline — [topic]".
+• Never omit important details, examples, or conditions from the source.
+
+======================================================================
+5. DIVERSE DEMONSTRATION CARDS (SHOWING SELECTIVE GRAPH USAGE)
+======================================================================
+Notice how each card audits the topic and uses ONLY the blocks that fit:
+
+{
+  "title": "[INSERT TOPIC]",
+  "chapter": "[INSERT TOPIC]",
+  "subject": "[Academic Subject]",
+  "lesson": "Study Notes",
+  "images": [],
+  "cards": [
+    {
+      "type": "keyword",
+      "front": "Equal-Frequency Binning",
+      "source_slide": 1,
+      "back_blocks": [
+        {
+          "kind": "what_breaks",
+          "label": "If You Do Nothing — What Breaks?",
+          "nickname": "Bucket Equalizer",
+          "text": "Without equal-frequency binning, skewed outliers leave intervals empty and distort downstream models."
+        },
+        {
+          "kind": "definition",
+          "term": "Equal-Frequency Binning (Bucket Equalizer)",
+          "text": "Sorts raw data and slices it into k buckets so every bucket holds the exact same count of N/k items."
+        },
+        {
+          "kind": "table",
+          "label": "Bin Assignment Example",
+          "columns": ["Bin", "Original Values", "Bin Mean", "Bin Boundaries"],
+          "rows": [
+            ["G1", "4, 8, 9, 15", "9, 9, 9, 9", "4, 4, 4, 15"],
+            ["G2", "21, 21, 24, 25", "23, 23, 23, 23", "21, 21, 25, 25"]
+          ]
+        },
+        {
+          "kind": "switch_tldr",
+          "label": "3-Sentence Switch TL;DR",
+          "match_path": "Smooth by Bin Means -> Replace every number in bucket with average.",
+          "mismatch_path": "Smooth by Bin Boundaries -> Snap each number to closest boundary edge.",
+          "checker": "Distance to min vs max boundary (|x - min| vs |max - x|) checks which edge wins."
+        },
+        {
+          "kind": "verbatim",
+          "label": "Verbatim Source Wording",
+          "slide": 1,
+          "text": "Equal-frequency (equi-depth) partitioning divides the range into N intervals, each containing approximately same number of samples."
+        }
+      ],
+      "back": "• **Equal-Frequency Binning** — Sorts raw data into k buckets with equal sample counts."
+    },
+    {
+      "type": "keyword",
+      "front": "Bin Capacity Formula",
+      "source_slide": 2,
+      "back_blocks": [
+        {
+          "kind": "definition",
+          "term": "Bin Capacity Rule",
+          "text": "Calculates the exact number of elements allocated to each bin based on total sample count and bucket count."
+        },
+        {
+          "kind": "formula",
+          "label": "Calculation",
+          "text": "C = \\\\frac{N}{k}"
+        },
+        {
+          "kind": "example",
+          "label": "Zero-Skip Plug-In",
+          "text": "For N = 12 total items and k = 3 buckets: 12 / 3 = 4 items per bin."
+        },
+        {
+          "kind": "verbatim",
+          "label": "Verbatim Source Wording",
+          "slide": 2,
+          "text": "Bin capacity is determined by dividing the total count of observations N by the specified number of bins k."
+        }
+      ],
+      "back": "• **Bin Capacity Formula** — C = N / k."
+    },
+    {
+      "type": "keyword",
+      "front": "Data Discretization Lifecycle",
+      "source_slide": 3,
+      "back_blocks": [
+        {
+          "kind": "definition",
+          "term": "Data Discretization",
+          "text": "Transforms continuous numeric attributes into categorical or discrete interval counterparts."
+        },
+        {
+          "kind": "steps",
+          "label": "Discretization Phases",
+          "items": [
+            "Sort the continuous raw values",
+            "Select splitting or binning criterion",
+            "Map intervals to discrete integer labels"
+          ]
+        },
+        {
+          "kind": "pros_cons",
+          "label": "Trade-offs",
+          "pros": ["Simplifies machine learning model training", "Reduces susceptibility to minor noise"],
+          "cons": ["Loses fine-grained numerical precision"]
+        },
+        {
+          "kind": "verbatim",
+          "label": "Verbatim Source Wording",
+          "slide": 3,
+          "text": "Discretization techniques reduce the number of values for a continuous attribute by dividing the range into intervals."
+        }
+      ],
+      "back": "• **Data Discretization** — Converts continuous numeric variables into discrete intervals."
+    }
+  ]
+}
+
+======================================================================
+6. SYNTAX & FORMATTING CONSTRAINTS
+======================================================================
+• Output ONLY the raw valid JSON. Do NOT wrap with markdown fences (\`\`\`json) or code blocks.
+• When you are done generating all study notes, output ONLY the completed JSON. Do NOT ask to continue, do NOT output a continue button/prompt, and do NOT include any conversational follow-up text.
+• Every LaTeX command must be double-escaped: "\\\\frac", "\\\\cdot", "\\\\times".
+• Every newline inside a JSON string must be written as \\n.
+
+TOPIC: [INSERT TOPIC]
+CHAPTER: [INSERT CHAPTER]
+SUBJECT: [INSERT SUBJECT]
+LESSON: [INSERT LESSON]
+REFERENCE STUDY NOTES: [PASTE YOUR STUDY NOTES HERE]`
+
 export default function UploadModal() {
   const router = useRouter()
   const isOpen = useUIStore((s) => s.isUploadModalOpen)
   const tab = useUIStore((s) => s.uploadModalTab)
   const setTab = useUIStore((s) => s.setUploadModalTab)
   const closeUploadModal = useUIStore((s) => s.closeUploadModal)
+  const pendingStoreFiles = useUIStore((s) => s.pendingSharedFiles)
+  const clearPendingStoreFiles = useUIStore((s) => s.clearPendingSharedFiles)
   const addToast = useToastStore((s) => s.addToast)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const isSubmittingRef = useRef(false)
   const [deckName, setDeckName] = useState('')
   const [state, setState] = useState<UploadState>('idle')
   const [progress, setProgress] = useState('')
   const [error, setError] = useState('')
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [pasteText, setPasteText] = useState('')
+  const [attachedJson, setAttachedJson] = useState<AttachedJsonDeck | null>(null)
+  const attachedJsonPayloadRef = useRef<string>('')
   const [textLoading, setTextLoading] = useState(false)
   const [textProgress, setTextProgress] = useState('')
-  const isPaid = useCreditsStore((s) => s.isPaidAccount)
-  const [previewContent, setPreviewContent] = useState<string | null>(null)
-  const [previewFileName, setPreviewFileName] = useState<string>('')
 
-  const handlePreviewFile = async (file: File) => {
-    soundEngine.play('poppy')
-    setPreviewFileName(file.name)
-    try {
-      const ext = file.name.split('.').pop()?.toLowerCase()
-      if (ext === 'json' || ext === 'csv' || ext === 'txt' || file.type.startsWith('text/')) {
-        const text = await file.text()
-        setPreviewContent(text.slice(0, 6000) + (text.length > 6000 ? '\n\n...[Preview truncated for length]...' : ''))
-      } else {
-        setPreviewContent(`File: ${file.name} (${formatFileSize(file.size)})\nType: ${file.type || ext}\n\nDocument ready to parse.`)
+  const handlePasteTextChange = (val: string) => {
+    // If the pasted input is JSON and large (>15KB) or starts like JSON, convert to memory capsule
+    const trimmed = val.trim()
+    const startsLikeJson = (trimmed.startsWith('{') || trimmed.startsWith('[') || trimmed.startsWith('```json') || trimmed.startsWith('```')) && (trimmed.includes('"cards"') || trimmed.includes('"type"') || trimmed.includes('"front"'))
+    
+    if (startsLikeJson && trimmed.length > 5000) {
+      let clean = trimmed
+      if (clean.startsWith('```')) {
+        clean = clean.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
       }
-    } catch {
-      setPreviewContent('Unable to preview file content directly.')
+      try {
+        const extracted = extractJsonString(clean)
+        const parsed = JSON.parse(extracted)
+        const rawCards = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.cards) ? parsed.cards : (Array.isArray(parsed?.flashcards) ? parsed.flashcards : (Array.isArray(parsed?.items) ? parsed.items : [])))
+        const cardCount = rawCards.length || 1
+        const detectedTitle = parsed?.title || parsed?.subject || 'Pasted Deck JSON'
+        
+        attachedJsonPayloadRef.current = extracted
+        setAttachedJson({
+          name: 'deck.json',
+          sizeBytes: new Blob([extracted]).size,
+          cardCount,
+          title: detectedTitle
+        })
+        if (!deckName.trim() && detectedTitle && detectedTitle !== 'Pasted Deck JSON') {
+          setDeckName(detectedTitle)
+        }
+        setPasteText('')
+        addToast(`Attached ${cardCount} cards from JSON (${(new Blob([extracted]).size / 1024).toFixed(1)} KB)`, 'success')
+        return
+      } catch (e) {
+        // Fallback to normal text if it was not valid JSON
+      }
+    }
+    setPasteText(val)
+  }
+
+  const handleClearAttachedJson = () => {
+    attachedJsonPayloadRef.current = ''
+    setAttachedJson(null)
+  }
+
+  const stageIncomingEntries = async (entries: SharedFileEntry[]) => {
+    if (!entries || !entries.length) return
+    try {
+      const convertedFiles = await Promise.all(
+        entries.map(async (entry) => {
+          let f: File
+          if (entry.base64) {
+            f = base64ToFile(entry.base64, entry.name, entry.mimeType)
+          } else {
+            const fileUri = entry.path.startsWith('file://') ? entry.path : `file://${entry.path}`
+            const { data } = await Filesystem.readFile({
+              path: fileUri,
+            })
+            f = base64ToFile(data as string, entry.name, entry.mimeType)
+          }
+          if (entry.path) {
+            ;(f as any).nativePath = entry.path
+          }
+          return f
+        })
+      )
+
+      if (!convertedFiles.length) return
+
+      // Stage files without auto-processing, preserving any already staged files
+      setSelectedFiles((prev) => {
+        const existingNames = new Set(prev.map((f) => f.name.toLowerCase()))
+        const newUnique = convertedFiles.filter((f) => !existingNames.has(f.name.toLowerCase()))
+        return [...prev, ...newUnique]
+      })
+
+      // Suggest sensible title from the first document if deck name is empty
+      setDeckName((prev) => {
+        if (prev.trim()) return prev
+        const cleanName = convertedFiles[0].name
+          .replace(/\.[^/.]+$/, '')
+          .replace(/[_-]+/g, ' ')
+          .trim()
+        return cleanName.charAt(0).toUpperCase() + cleanName.slice(1)
+      })
+
+      setTab('file')
+      setState('idle')
+      addToast(`📄 Staged ${convertedFiles.length} file(s) for import`, 'success')
+    } catch (err) {
+      console.error('[UploadModal] Failed to stage shared files:', err)
+      setError('Could not stage shared file')
     }
   }
+
+  // Handle files shared via Android intent from Zustand store, session storage, or live events
+  useEffect(() => {
+    if (!isOpen) return
+
+    // 1. Process files from reactive Zustand store
+    if (pendingStoreFiles && pendingStoreFiles.length > 0) {
+      stageIncomingEntries(pendingStoreFiles)
+      clearPendingStoreFiles()
+      return
+    }
+
+    // 2. Process files saved to sessionStorage on cold-start
+    const pending = sessionStorage.getItem('pendingSharedFiles')
+    if (pending) {
+      sessionStorage.removeItem('pendingSharedFiles')
+      try {
+        const entries: SharedFileEntry[] = JSON.parse(pending)
+        stageIncomingEntries(entries)
+      } catch (err) {
+        console.error('[UploadModal] Bad pendingSharedFiles JSON:', err)
+      }
+    }
+
+    // 3. Listen for live incoming shared files while modal is already open
+    const onLiveShared = (e: Event) => {
+      const custom = e as CustomEvent<{ files: SharedFileEntry[] }>
+      if (custom.detail?.files) {
+        stageIncomingEntries(custom.detail.files)
+      }
+    }
+
+    window.addEventListener('studyup:shared-files', onLiveShared)
+    return () => {
+      window.removeEventListener('studyup:shared-files', onLiveShared)
+    }
+  }, [isOpen, pendingStoreFiles])
+
+  const hasActiveJob = useRelayJobStore((s) => s.jobs.some((j) => j.status === 'polling'))
 
   if (!isOpen) return null
 
@@ -64,43 +401,113 @@ export default function UploadModal() {
     setError('')
     setSelectedFiles([])
     setPasteText('')
+    setAttachedJson(null)
+    attachedJsonPayloadRef.current = ''
     setTextLoading(false)
     setTextProgress('')
-    setPreviewContent(null)
-    setPreviewFileName('')
   }
 
   const handleClose = () => {
-    soundEngine.play('thocky')
     closeUploadModal()
-    reset()
+    if (state === 'success' || state === 'error') {
+      setState('idle')
+      setError('')
+      setProgress('')
+    }
   }
 
+  const MAX_FILES = 4
+  const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+
   const handleFilesAdded = (newFiles: FileList | File[]) => {
+    if (hasActiveJob) {
+      addToast('A deck is currently being generated. Please wait for it to complete.', 'info')
+      return
+    }
     const arr = Array.from(newFiles)
+    const oversized = arr.find((f) => f.size > MAX_FILE_SIZE)
+    if (oversized) {
+      setError(`File "${oversized.name}" exceeds the 10MB limit. Each file must be 10MB or less.`)
+      setState('error')
+      return
+    }
+
+    let hitLimit = false
     setSelectedFiles((prev) => {
       const existingKeys = new Set(prev.map((f) => `${f.name}_${f.size}`))
       const toAdd = arr.filter((f) => !existingKeys.has(`${f.name}_${f.size}`))
+      if (prev.length + toAdd.length > MAX_FILES) {
+        hitLimit = true
+        const allowedSpace = Math.max(0, MAX_FILES - prev.length)
+        return [...prev, ...toAdd.slice(0, allowedSpace)]
+      }
       return [...prev, ...toAdd]
     })
-    setError('')
-    setState('idle')
+
+    if (hitLimit) {
+      setError(`Maximum ${MAX_FILES} files allowed per upload. Extra files were omitted.`)
+      setState('error')
+    } else {
+      setError('')
+      setState('idle')
+    }
   }
 
   const handleRemoveFile = (index: number) => {
     setSelectedFiles((prev) => prev.filter((_, i) => i !== index))
+    setError('')
+    setState('idle')
   }
 
   const processSelectedFiles = async () => {
-    if (selectedFiles.length === 0) return
-    soundEngine.play('poppy')
+    if (hasActiveJob) {
+      addToast('A deck is currently being generated. Please wait for it to complete.', 'info')
+      return
+    }
+    if (selectedFiles.length === 0 || isSubmittingRef.current || state === 'processing') return
+    isSubmittingRef.current = true
     const name = deckName.trim()
 
-    const tooLarge = selectedFiles.find((f) => f.size > 25 * 1024 * 1024)
+    if (selectedFiles.length > MAX_FILES) {
+      setState('error')
+      setError(`Maximum ${MAX_FILES} files allowed per upload`)
+      isSubmittingRef.current = false
+      return
+    }
+
+    const tooLarge = selectedFiles.find((f) => f.size > MAX_FILE_SIZE)
     if (tooLarge) {
       setState('error')
-      setError(`File "${tooLarge.name}" exceeds 25MB limit`)
+      setError(`File "${tooLarge.name}" exceeds 10MB limit`)
+      isSubmittingRef.current = false
       return
+    }
+
+    // Pre-flight check: if files require AI conversion (non-JSON), verify server and extension relay are online
+    const requiresAI = selectedFiles.some(f => !f.name.toLowerCase().endsWith('.json'))
+    if (requiresAI) {
+      try {
+        const statusRes = await fetch('/api/relay/status?type=client', { signal: AbortSignal.timeout(5000), cache: 'no-store' })
+        if (!statusRes.ok) {
+          addToast('Relay server unreachable. Please start start_relay.bat or run_relay_hidden.vbs', 'error')
+          setState('idle')
+          isSubmittingRef.current = false
+          return
+        }
+        const statusData = await statusRes.json().catch(() => ({}))
+        const isOnline = Boolean(statusData.extensionOnline || (statusData.workerCount && statusData.workerCount > 0) || statusData.serverOnline)
+        if (!isOnline) {
+          addToast('Relay worker is offline. Start the relay daemon or use Claude.', 'error')
+          setState('idle')
+          isSubmittingRef.current = false
+          return
+        }
+      } catch (err: any) {
+        addToast(`Relay check error: ${err?.message || 'Server offline'}`, 'error')
+        setState('idle')
+        isSubmittingRef.current = false
+        return
+      }
     }
 
     setState('processing')
@@ -108,15 +515,27 @@ export default function UploadModal() {
     setError('')
 
     try {
-      const id = await handleMultipleUpload(selectedFiles, setProgress, name)
-      addToast('Deck created!', 'success')
-      closeUploadModal()
-      reset()
-      router.push('/study/' + id)
+      const addJob = useRelayJobStore.getState().addJob
+      const id = await handleMultipleUpload(selectedFiles, setProgress, name, (jobId, deckId, topic) => {
+        addJob({ jobId, deckId, topic })
+        addToast(`"${topic}" sent to relay — processing in background…`, 'success')
+        handleClose()
+      })
+      // If onEnqueued fired, handleClose() already ran — id may be a sentinel deckId
+      // Only navigate/toast if we got a real deck back synchronously
+      const wasEnqueued = useRelayJobStore.getState().jobs.some(j => j.deckId === id)
+      if (!wasEnqueued) {
+        addToast('Deck created successfully!', 'success')
+        handleClose()
+        router.push('/study/' + id)
+      }
     } catch (err) {
       const message = err instanceof UploadError ? err.message : 'Upload failed'
       setState('error')
       setError(message)
+      addToast(message, 'error')
+    } finally {
+      isSubmittingRef.current = false
     }
   }
 
@@ -131,7 +550,7 @@ export default function UploadModal() {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       handleFilesAdded(e.target.files)
-      e.target.value = ''
+      e.target.value = '' // Reset input so re-selecting same files works
     }
   }
 
@@ -144,68 +563,72 @@ export default function UploadModal() {
   }
 
   const handleGenerate = async () => {
-    let cleanText = pasteText.trim()
-    if (!cleanText) return
-    soundEngine.play('poppy')
-
-    // 1. Strip any markdown code fences (```json, ```csv, or ```)
-    if (cleanText.includes('```')) {
-      const fenceMatch = cleanText.match(/```(?:json|csv)?\s*([\s\S]*?)\s*```/i)
-      if (fenceMatch && fenceMatch[1]) {
-        cleanText = fenceMatch[1].trim()
-      } else {
-        cleanText = cleanText.replace(/^```[a-z]*\s*/i, '').replace(/\s*```$/, '').trim()
-      }
+    if (hasActiveJob) {
+      addToast('A deck is currently being generated. Please wait for it to complete.', 'info')
+      return
     }
 
-    // 2. JSON FIRST: check if the text is JSON or contains a JSON structure
+    // Check if we have an attached large JSON payload in memory
     let isJson = false
-    let cleanJsonPayload = cleanText
+    let payload = ''
 
-    if (cleanText.startsWith('{') || cleanText.startsWith('[')) {
-      try {
-        JSON.parse(cleanText)
-        isJson = true
-      } catch {
-        isJson = true
-      }
+    if (attachedJson && attachedJsonPayloadRef.current) {
+      isJson = true
+      payload = attachedJsonPayloadRef.current
     } else {
-      const match = cleanText.match(/(\{[\s\S]*\}|\[[\s\S]*\])/)
-      if (match) {
-        try {
-          JSON.parse(match[0])
-          isJson = true
-          cleanJsonPayload = match[0].trim()
-        } catch {}
+      let cleanText = pasteText.trim()
+      if (!cleanText) return
+
+      // Strip markdown code fences if user copied ```json ... ``` from Gemini/Claude
+      if (cleanText.startsWith('```')) {
+        cleanText = cleanText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+      }
+
+      isJson = isJsonInput(cleanText)
+      payload = isJson ? extractJsonString(cleanText) : cleanText
+    }
+    
+    const name = deckName.trim()
+
+    if (!isJson) {
+      try {
+        const statusRes = await fetch('/api/relay/status?type=client', { signal: AbortSignal.timeout(5000), cache: 'no-store' })
+        if (!statusRes.ok) {
+          addToast('Relay server unreachable. Please start start_relay.bat or run_relay_hidden.vbs', 'error')
+          return
+        }
+        const statusData = await statusRes.json().catch(() => ({}))
+        const isOnline = Boolean(statusData.extensionOnline || (statusData.workerCount && statusData.workerCount > 0) || statusData.serverOnline)
+        if (!isOnline) {
+          addToast('Relay worker is offline. Start the relay daemon or use Claude.', 'error')
+          return
+        }
+      } catch (err: any) {
+        addToast(`Relay check error: ${err?.message || 'Server offline'}`, 'error')
+        return
       }
     }
 
-    const lines = cleanText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
-    const rawFirstLine = lines[0] ?? ''
-    const isCsv = !isJson && /^front[,\t]/i.test(rawFirstLine)
-
-    const name = deckName.trim()
     setTextLoading(true)
-    setTextProgress(isJson ? 'Parsing JSON deck...' : isCsv ? 'Parsing CSV deck...' : 'Generating deck...')
+    setTextProgress(isJson ? 'Parsing JSON deck…' : 'Sending to Gemini Flash Relay…')
     try {
-      const file = new File(
-        [isJson ? cleanJsonPayload : cleanText],
-        isJson ? 'deck.json' : isCsv ? 'deck.csv' : 'notes.txt',
-        {
-          type: isJson ? 'application/json' : isCsv ? 'text/csv' : 'text/plain',
-        }
-      )
-      const id = await handleUpload(
-        file,
-        (step) => {
-          setTextProgress(step)
-        },
-        name
-      )
-      addToast('Deck created!', 'success')
-      closeUploadModal()
-      reset()
-      router.push('/study/' + id)
+      const fileName = isJson ? 'deck.json' : (tab === 'notes' ? 'notes_only.txt' : 'notes.txt')
+      const file = new File([payload], fileName, { type: isJson ? 'application/json' : 'text/plain' })
+      const addJob = useRelayJobStore.getState().addJob
+      let enqueued = false
+      const id = await handleUpload(file, (step) => {
+        setTextProgress(step)
+      }, name, (jobId, deckId, topic) => {
+        enqueued = true
+        addJob({ jobId, deckId, topic })
+        addToast(`"${topic}" sent to relay — processing in background…`, 'success')
+        handleClose()
+      })
+      if (!enqueued) {
+        addToast('Deck created successfully!', 'success')
+        handleClose()
+        router.push('/study/' + id)
+      }
     } catch (err) {
       const message = err instanceof UploadError ? err.message : 'Failed to generate deck'
       addToast(message, 'error')
@@ -215,318 +638,122 @@ export default function UploadModal() {
     }
   }
 
+  const handleCopyToClaude = async () => {
+    const prompt = CLAUDE_PROMPT_TEMPLATE
+      .replace('[INSERT TOPIC]', deckName.trim() || '[INSERT TOPIC]')
+    try {
+      await navigator.clipboard.writeText(prompt)
+      addToast('Full Deck Prompt copied — paste it in Claude', 'success')
+      window.open('https://claude.ai/', '_blank', 'noopener,noreferrer')
+    } catch (err) {
+      addToast('Failed to copy prompt', 'error')
+    }
+  }
+
+  const handleCopyNotesToClaude = async () => {
+    const prompt = CLAUDE_NOTES_PROMPT_TEMPLATE
+      .replace('[INSERT TOPIC]', deckName.trim() || '[INSERT TOPIC]')
+    try {
+      await navigator.clipboard.writeText(prompt)
+      addToast('Notes Only Prompt copied — paste it in Claude', 'success')
+      window.open('https://claude.ai/', '_blank', 'noopener,noreferrer')
+    } catch (err) {
+      addToast('Failed to copy prompt', 'error')
+    }
+  }
+
+  const handleExportFilesToClaude = async () => {
+    if (!selectedFiles.length) {
+      addToast('Please stage at least one file first', 'error')
+      return
+    }
+
+    const topic =
+      deckName.trim() ||
+      selectedFiles[0].name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ').trim() ||
+      '[INSERT TOPIC]'
+    const prompt = CLAUDE_PROMPT_TEMPLATE.replace('[INSERT TOPIC]', topic)
+
+    if (Capacitor.getPlatform() === 'android') {
+      try {
+        const filePayloads = await Promise.all(
+          selectedFiles.map(async (file) => {
+            const nativePath = (file as any).nativePath as string | undefined
+            if (nativePath) {
+              return {
+                name: file.name,
+                path: nativePath,
+              }
+            }
+            const base64Data = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader()
+              reader.onload = () => {
+                const res = reader.result as string
+                resolve(res.split(',')[1] || res)
+              }
+              reader.onerror = reject
+              reader.readAsDataURL(file)
+            })
+            return {
+              name: file.name,
+              base64: base64Data,
+            }
+          })
+        )
+
+        await SharedFile.exportToClaude({
+          prompt,
+          files: filePayloads,
+        })
+        addToast('🚀 Exported files to Claude app!', 'success')
+        return
+      } catch (err) {
+        console.warn('Native exportToClaude failed, falling back to clipboard:', err)
+      }
+    }
+
+    // Web Browser Fallback: Copy template prompt to clipboard and open Claude
+    try {
+      await navigator.clipboard.writeText(prompt)
+      addToast('Prompt template copied — attach your files in Claude', 'success')
+      window.open('https://claude.ai/', '_blank', 'noopener,noreferrer')
+    } catch {
+      addToast('Failed to copy prompt', 'error')
+    }
+  }
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-[#05060c]/75 backdrop-blur-[2px] animate-backdrop-fade-in"
-      onClick={handleClose}
-    >
-      <div
-        className="w-full sm:max-w-[420px] bg-[#0b0c14] border-2 border-[#222536] border-b-0 sm:border-b-2 rounded-t-[26px] sm:rounded-[26px] p-0 flex flex-col max-h-[92vh] overflow-hidden shadow-[0_-6px_24px_rgba(0,0,0,0.5)] sm:shadow-[0_8px_32px_rgba(0,0,0,0.6)] animate-drawer-slide-up"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Top Drag Handle */}
-        <div className="w-10 h-1 rounded-full bg-[#222536] mx-auto mt-2.5 shrink-0" />
-
-        {/* Modal Header */}
-        <div className="flex items-center justify-between h-16 px-5 shrink-0">
-          <h1 className="text-[24px] font-black tracking-[0.01em] uppercase text-white m-0">
-            Create Deck
-          </h1>
-          <button
-            type="button"
-            onClick={handleClose}
-            aria-label="Close"
-            className="w-11 h-11 rounded-[14px] border-2 border-[#222536] bg-[#1c1f2e] shadow-[0_3px_0_0_#121420] grid place-items-center p-0 tactile-btn cursor-pointer text-white"
-          >
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="#fff"
-              strokeWidth="3"
-              strokeLinecap="round"
-              aria-hidden="true"
-            >
-              <path d="M6 6l12 12M18 6L6 18" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Scrollable Content Body */}
-        <div className="px-5 pb-7 overflow-y-auto no-scrollbar">
-          {/* Segmented Pill Tabs */}
-          <div className="p-1 rounded-[26px] bg-[#1a1c29] border-2 border-[#222536] flex gap-1">
-            <button
-              type="button"
-              onClick={() => {
-                soundEngine.play('thocky')
-                setTab('text')
-              }}
-              className={`flex-1 h-11 rounded-[22px] border-0 text-xs font-black tracking-[0.08em] uppercase transition flex items-center justify-center gap-2 tactile-btn cursor-pointer ${
-                tab === 'text'
-                  ? 'bg-[#9333ea] text-white shadow-[0_3px_0_0_#6b21a8]'
-                  : 'bg-transparent text-[#8e92a8] hover:text-white'
-              }`}
-            >
-              Paste text
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                soundEngine.play('thocky')
-                setTab('file')
-              }}
-              className={`flex-1 h-11 rounded-[22px] border-0 text-xs font-black tracking-[0.08em] uppercase transition flex items-center justify-center gap-2 tactile-btn cursor-pointer ${
-                tab === 'file'
-                  ? 'bg-[#9333ea] text-white shadow-[0_3px_0_0_#6b21a8]'
-                  : 'bg-transparent text-[#8e92a8] hover:text-white'
-              }`}
-            >
-              <span>Upload files</span>
-              <span className="h-5 px-2 rounded-full bg-[#f59e0b] text-black text-[10px] font-black tracking-[0.06em] inline-flex items-center">
-                PRO
-              </span>
-            </button>
-          </div>
-
-          {/* Deck Title Input */}
-          <div className="mt-5">
-            <label
-              htmlFor="deck-title-input"
-              className="block text-xs font-black tracking-[0.08em] uppercase text-white mb-2"
-            >
-              Deck title
-            </label>
-            <input
-              id="deck-title-input"
-              type="text"
-              value={deckName}
-              onChange={(e) => setDeckName(e.target.value)}
-              placeholder="Optional"
-              className="w-full h-12 px-4 rounded-[16px] border-2 border-[#222536] bg-[#1a1c29] text-white text-base font-semibold placeholder:text-[#8e92a8] outline-none focus:border-[#9333ea] transition"
-            />
-          </div>
-
-          {/* Tab 1: Upload Files */}
-          {tab === 'file' ? (
-            <div className="mt-4">
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept=".csv,.json,.docx,.txt,.pdf,.ppt,.pptx"
-                className="hidden"
-                onChange={handleFileSelect}
-              />
-
-              {state === 'processing' ? (
-                <div className="rounded-[18px] border-2 border-[#222536] bg-[#151722] shadow-[0_6px_0_0_#141622] p-8 text-center flex flex-col items-center gap-3">
-                  <Loader2 size={32} className="animate-spin text-[#c084fc]" />
-                  <p className="text-sm font-black tracking-[0.06em] uppercase text-white">
-                    {progress || 'Processing files...'}
-                  </p>
-                </div>
-              ) : state === 'error' ? (
-                <div className="rounded-[18px] border-2 border-[#222536] bg-[#151722] shadow-[0_6px_0_0_#141622] p-6 text-center">
-                  <XCircle size={36} className="mx-auto text-[#ff5252]" />
-                  <p className="text-xs text-[#ff5252] font-bold mt-2.5">{error}</p>
-                  <button
-                    type="button"
-                    onClick={handleRetry}
-                    className="mt-4 px-5 py-2.5 rounded-[14px] border-2 border-[#222536] bg-[#1c1f2e] text-white font-black text-xs uppercase tracking-wider tactile-btn"
-                  >
-                    Try again
-                  </button>
-                </div>
-              ) : !isPaid ? (
-                /* Free Account Locked State from Redesign */
-                <>
-                  <div className="mt-4 rounded-[18px] border-2 border-dashed border-[#2f3350] bg-[#151722] shadow-[0_6px_0_0_#141622] py-8 px-5 flex flex-col items-center text-center">
-                    <div className="w-12 h-12 rounded-[16px] bg-[#9333ea]/15 border-2 border-[#9333ea]/30 grid place-items-center text-[#c084fc]">
-                      <svg
-                        width="22"
-                        height="22"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="#c084fc"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden="true"
-                      >
-                        <rect x="5" y="11" width="14" height="9" rx="2.5" />
-                        <path d="M8 11V8a4 4 0 018 0v3" />
-                      </svg>
-                    </div>
-                    <div className="mt-4 text-sm font-black tracking-[0.06em] uppercase text-white max-w-[240px] leading-snug">
-                      Sending files is a Pro feature
-                    </div>
-                    <p className="mt-1.5 text-xs text-[#8e92a8] font-bold max-w-[260px] leading-relaxed">
-                      File uploads are exclusive to StudyUp Pro subscribers. Paste text is completely free to use.
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      soundEngine.play('poppy')
-                      openStripePayment()
-                    }}
-                    className="mt-6 w-full h-14 rounded-[16px] border-2 border-[#9333ea] bg-[#9333ea] text-white text-base font-black tracking-[0.06em] uppercase shadow-[0_5px_0_0_#6b21a8] tactile-btn flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    Upgrade to Pro
-                  </button>
-                </>
-              ) : (
-                /* Paid / Pro Upload UI */
-                <>
-                  <div
-                    onDrop={handleDrop}
-                    onDragOver={(e) => {
-                      e.preventDefault()
-                      setState('dragover')
-                    }}
-                    onDragLeave={() => setState('idle')}
-                    onClick={() => fileInputRef.current?.click()}
-                    className={`rounded-[18px] border-2 border-dashed p-6 text-center transition cursor-pointer shadow-[0_6px_0_0_#141622] ${
-                      state === 'dragover'
-                        ? 'border-[#9333ea] bg-[#201833]'
-                        : 'border-[#2f3350] hover:border-[#9333ea] bg-[#151722]'
-                    }`}
-                  >
-                    <div className="w-12 h-12 rounded-[16px] bg-[#9333ea]/15 border-2 border-[#9333ea]/30 grid place-items-center text-[#c084fc] mx-auto mb-2">
-                      <Upload size={22} />
-                    </div>
-                    <p className="text-sm font-black tracking-[0.06em] uppercase text-white">
-                      {state === 'dragover' ? 'Drop files here' : 'Tap or drop files here'}
-                    </p>
-                    <p className="text-xs text-[#8e92a8] font-bold uppercase tracking-wider mt-1">
-                      PDF, PPTX, DOCX, TXT, CSV, JSON
-                    </p>
-                  </div>
-
-                  {selectedFiles.length > 0 && (
-                    <div className="mt-4 space-y-2.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-black uppercase tracking-wider text-[#8e92a8]">
-                          Files ({selectedFiles.length})
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="text-xs text-[#c084fc] font-black uppercase tracking-wider flex items-center gap-1 cursor-pointer"
-                        >
-                          <Plus size={14} /> Add more
-                        </button>
-                      </div>
-
-                      <div className="space-y-2 max-h-40 overflow-y-auto pr-1 no-scrollbar">
-                        {selectedFiles.map((file, idx) => (
-                          <div
-                            key={idx}
-                            className="flex items-center justify-between p-2.5 rounded-[14px] bg-[#1a1c29] border-2 border-[#222536]"
-                          >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <FileText size={16} className="text-[#c084fc] shrink-0" />
-                              <div className="min-w-0">
-                                <p className="text-xs font-bold text-white truncate max-w-[210px]">
-                                  {file.name}
-                                </p>
-                                <p className="text-[10px] font-semibold text-[#8e92a8]">
-                                  {formatFileSize(file.size)}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => handlePreviewFile(file)}
-                                className="p-1.5 text-[#8e92a8] hover:text-[#c084fc] transition cursor-pointer"
-                                title="View file"
-                              >
-                                <Eye size={15} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveFile(idx)}
-                                className="p-1.5 text-[#8e92a8] hover:text-[#ff5252] transition cursor-pointer"
-                                title="Remove"
-                              >
-                                <Trash2 size={15} />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {previewContent !== null && (
-                        <div className="mt-3 p-3.5 rounded-[16px] bg-[#1a1c29] border-2 border-[#9333ea]/40">
-                          <div className="flex items-center justify-between pb-2 mb-2 border-b border-[#222536]">
-                            <span className="text-xs font-bold text-[#c084fc] truncate max-w-[240px]">
-                              {previewFileName}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setPreviewContent(null)}
-                              className="text-xs text-[#8e92a8] hover:text-white font-black cursor-pointer"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                          <pre className="text-[11.5px] font-mono text-[#cbd5e1] max-h-36 overflow-y-auto whitespace-pre-wrap leading-relaxed no-scrollbar select-text">
-                            {previewContent}
-                          </pre>
-                        </div>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={processSelectedFiles}
-                        className="mt-4 w-full h-14 rounded-[16px] border-2 border-[#9333ea] bg-[#9333ea] text-white text-base font-black tracking-[0.06em] uppercase shadow-[0_5px_0_0_#6b21a8] tactile-btn flex items-center justify-center gap-2 cursor-pointer"
-                      >
-                        <Sparkles size={18} />
-                        <span>Generate Deck ({selectedFiles.length})</span>
-                      </button>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          ) : (
-            /* Tab 2: Paste Text */
-            <div className="mt-4">
-              <textarea
-                value={pasteText}
-                onChange={(e) => setPasteText(e.target.value)}
-                placeholder="Paste your study notes, JSON flashcards, or CSV here..."
-                rows={6}
-                className="w-full h-36 px-4 py-3 rounded-[18px] border-2 border-[#222536] bg-[#1a1c29] text-white text-sm font-medium placeholder:text-[#8e92a8] focus:border-[#9333ea] focus:outline-none resize-none transition"
-              />
-              <button
-                type="button"
-                onClick={handleGenerate}
-                disabled={textLoading || !pasteText.trim()}
-                className="mt-5 w-full h-14 rounded-[16px] border-2 border-[#9333ea] bg-[#9333ea] text-white text-base font-black tracking-[0.06em] uppercase shadow-[0_5px_0_0_#6b21a8] disabled:opacity-45 disabled:cursor-not-allowed tactile-btn flex items-center justify-center gap-2 cursor-pointer"
-              >
-                {textLoading ? (
-                  <Loader2 size={18} className="animate-spin" />
-                ) : (
-                  <Sparkles size={18} />
-                )}
-                <span>{textLoading ? 'Generating Deck...' : 'Generate Deck'}</span>
-              </button>
-
-              {textLoading && textProgress && (
-                <div className="mt-3 p-3 rounded-[14px] bg-[#151722] border-2 border-[#222536] text-xs font-bold text-[#8e92a8] text-center flex items-center justify-center gap-2">
-                  <Loader2 size={14} className="animate-spin text-[#c084fc]" />
-                  <span>{textProgress}</span>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+    <CreateDeckModalUI
+      isOpen={isOpen}
+      tab={tab}
+      onSelectTab={setTab}
+      deckName={deckName}
+      onDeckNameChange={setDeckName}
+      hasActiveJob={hasActiveJob}
+      fileInputRef={fileInputRef}
+      state={state}
+      progress={progress}
+      error={error}
+      selectedFiles={selectedFiles}
+      pasteText={pasteText}
+      onPasteTextChange={handlePasteTextChange}
+      attachedJson={attachedJson}
+      onClearAttachedJson={handleClearAttachedJson}
+      textLoading={textLoading}
+      textProgress={textProgress}
+      onClose={handleClose}
+      onFileSelect={handleFileSelect}
+      onDrop={handleDrop}
+      onDragOver={(e) => { e.preventDefault(); setState('dragover') }}
+      onDragLeave={() => setState('idle')}
+      onRemoveFile={handleRemoveFile}
+      onProcessFiles={processSelectedFiles}
+      onExportFilesToClaude={handleExportFilesToClaude}
+      onGenerateText={handleGenerate}
+      onCopyToClaude={handleCopyToClaude}
+      onCopyNotesToClaude={handleCopyNotesToClaude}
+      onRetry={handleRetry}
+      formatFileSize={formatFileSize}
+    />
   )
 }
