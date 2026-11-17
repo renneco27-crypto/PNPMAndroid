@@ -362,12 +362,13 @@ export interface ParsedGivenExpression {
 export interface GivenLayout {
   isGrouped: boolean
   rows: string[][]
+  colKeys: string[]
   flat: string[]
 }
 
 export function parseGivenItems(givenList: string[]): GivenLayout {
   if (!givenList || givenList.length === 0) {
-    return { isGrouped: false, rows: [], flat: [] }
+    return { isGrouped: false, rows: [], colKeys: [], flat: [] }
   }
 
   const individualExprs: string[] = []
@@ -381,10 +382,20 @@ export function parseGivenItems(givenList: string[]): GivenLayout {
       const ch = s[i]
       if (ch === '{' || ch === '(' || ch === '[') depth++
       else if (ch === '}' || ch === ')' || ch === ']') depth = Math.max(0, depth - 1)
-      else if (ch === ',' && depth === 0) {
-        if (curr.trim()) parts.push(curr.trim())
-        curr = ''
-        continue
+      else if (depth === 0) {
+        if (ch === ',' || ch === ';') {
+          if (curr.trim()) parts.push(curr.trim())
+          curr = ''
+          continue
+        }
+        const remaining = s.slice(i)
+        const matchAt = remaining.match(/^\s+(?:at|and)\s+/i)
+        if (matchAt) {
+          if (curr.trim()) parts.push(curr.trim())
+          curr = ''
+          i += matchAt[0].length - 1
+          continue
+        }
       }
       curr += ch
     }
@@ -441,11 +452,11 @@ export function parseGivenItems(givenList: string[]): GivenLayout {
     })
 
     if (rows.length > 0) {
-      return { isGrouped: true, rows, flat: individualExprs }
+      return { isGrouped: true, rows, colKeys, flat: individualExprs }
     }
   }
 
-  return { isGrouped: false, rows: [], flat: individualExprs }
+  return { isGrouped: false, rows: [], colKeys: [], flat: individualExprs }
 }
 
 export function parseStepEquations(rawLatex: string): FormattedEqLine[] {
@@ -859,8 +870,12 @@ export default function MathLabView({ deckTitle = 'Math Lab', onBack, cards, dec
 
         .mathlab-theme main {
           max-width: 640px;
+          width: 100%;
           margin: 0 auto;
           padding: max(calc(env(safe-area-inset-top, 0px) + 12px), 20px) 14px 48px;
+          min-width: 0;
+          box-sizing: border-box;
+          overflow-x: hidden;
         }
         .mathlab-theme .bar {
           display: flex;
@@ -893,6 +908,10 @@ export default function MathLabView({ deckTitle = 'Math Lab', onBack, cards, dec
           margin: 0 0 12px;
           background: linear-gradient(170deg, var(--hero) 0%, var(--card) 100%);
           border: 1px solid var(--line);
+          max-width: 100%;
+          min-width: 0;
+          overflow: hidden;
+          box-sizing: border-box;
         }
         .mathlab-theme .tag {
           font-size: .75rem;
@@ -908,6 +927,9 @@ export default function MathLabView({ deckTitle = 'Math Lab', onBack, cards, dec
           font-weight: 900;
           margin: 0 0 12px;
           letter-spacing: -.02em;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          max-width: 100%;
         }
         .mathlab-theme .chips {
           display: flex;
@@ -956,17 +978,31 @@ export default function MathLabView({ deckTitle = 'Math Lab', onBack, cards, dec
           border-radius: 14px;
           padding: 16px;
           margin: 0 0 12px;
+          max-width: 100%;
+          min-width: 0;
+          box-sizing: border-box;
+          overflow: hidden;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+        }
+        .mathlab-theme .card * {
+          box-sizing: border-box;
         }
         .mathlab-theme .head {
           display: flex;
           align-items: center;
           justify-content: space-between;
           margin: 0 0 12px;
+          max-width: 100%;
+          min-width: 0;
         }
         .mathlab-theme h2 {
           font-size: 1.15rem;
           font-weight: 800;
           margin: 0;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          min-width: 0;
         }
         .mathlab-theme .btn {
           background: none;
@@ -996,6 +1032,10 @@ export default function MathLabView({ deckTitle = 'Math Lab', onBack, cards, dec
           column-gap: .55em;
           row-gap: .4em;
           align-items: baseline;
+          min-width: 0;
+          max-width: 100%;
+          overflow-x: auto;
+          box-sizing: border-box;
         }
         .mathlab-theme .grid .l {
           justify-self: end;
@@ -1006,6 +1046,7 @@ export default function MathLabView({ deckTitle = 'Math Lab', onBack, cards, dec
         }
         .mathlab-theme .grid .r {
           min-width: 0;
+          max-width: 100%;
           overflow-wrap: anywhere;
           word-break: break-word;
         }
@@ -1013,6 +1054,9 @@ export default function MathLabView({ deckTitle = 'Math Lab', onBack, cards, dec
           grid-template-columns: repeat(2, max-content max-content max-content);
           font: 1.1rem Georgia, serif;
           padding: 0 2px;
+          min-width: 0;
+          max-width: 100%;
+          overflow-x: auto;
         }
         .mathlab-theme .pair .g2 {
           padding-left: 2.2em;
@@ -1026,20 +1070,30 @@ export default function MathLabView({ deckTitle = 'Math Lab', onBack, cards, dec
           padding: 12px 14px;
           font: 1.1rem/1.5 Georgia, "Times New Roman", serif;
           overflow-x: auto;
+          overflow-y: hidden;
+          max-width: 100%;
+          min-width: 0;
+          box-sizing: border-box;
           overflow-wrap: anywhere;
           word-break: break-word;
+          -webkit-overflow-scrolling: touch;
         }
         .mathlab-theme .frm {
           display: flex;
           flex-wrap: wrap;
           gap: 10px;
+          min-width: 0;
+          max-width: 100%;
         }
         .mathlab-theme .frm > div {
           flex: 1 1 130px;
           min-width: 0;
+          max-width: 100%;
         }
         .mathlab-theme .frm > div:first-child {
           flex: 2 1 250px;
+          min-width: 0;
+          max-width: 100%;
         }
         .mathlab-theme .note {
           display: none;
@@ -1056,6 +1110,9 @@ export default function MathLabView({ deckTitle = 'Math Lab', onBack, cards, dec
           gap: 12px;
           padding: 14px 0;
           border-top: 1px solid var(--line);
+          min-width: 0;
+          max-width: 100%;
+          overflow: hidden;
         }
         .mathlab-theme .step:first-of-type {
           border-top: 0;
@@ -1096,11 +1153,15 @@ export default function MathLabView({ deckTitle = 'Math Lab', onBack, cards, dec
           justify-content: space-between;
           gap: 12px;
           margin: 0 0 12px;
+          max-width: 100%;
+          min-width: 0;
+          box-sizing: border-box;
           overflow: hidden;
         }
         .mathlab-theme .final-body {
           flex: 1;
           min-width: 0;
+          overflow: hidden;
         }
         .mathlab-theme .final small {
           display: block;
@@ -1115,7 +1176,9 @@ export default function MathLabView({ deckTitle = 'Math Lab', onBack, cards, dec
           font: italic 700 1.85rem/1.25 Georgia, serif;
           overflow-wrap: anywhere;
           word-break: break-word;
+          max-width: 100%;
           overflow-x: auto;
+          min-width: 0;
         }
         .mathlab-theme .final .v.v-med {
           font-size: 1.35rem;
@@ -1356,24 +1419,39 @@ export default function MathLabView({ deckTitle = 'Math Lab', onBack, cards, dec
                     </button>
                   </div>
                   {layout.isGrouped ? (
-                    <div className="flex flex-col gap-2.5 py-1">
-                      {layout.rows.map((row, rIdx) => (
-                        <div key={rIdx} className="flex flex-wrap items-baseline gap-x-8 gap-y-1">
-                          {row.map((item, cIdx) => (
-                            <div key={cIdx} className="min-w-[140px] inline-flex items-baseline gap-1.5 shrink-0 text-base sm:text-lg">
-                              <FormattedMathNode expr={item} />
-                            </div>
-                          ))}
-                        </div>
-                      ))}
+                    <div className="w-full max-w-full overflow-x-auto py-1 no-scrollbar">
+                      <div
+                        className="inline-grid gap-x-8 gap-y-2 items-baseline min-w-0"
+                        style={{
+                          gridTemplateColumns: `repeat(${layout.colKeys.length || 2}, max-content)`,
+                        }}
+                      >
+                        {layout.rows.map((row, rIdx) => (
+                          <React.Fragment key={rIdx}>
+                            {row.map((item, cIdx) => (
+                              <div
+                                key={cIdx}
+                                className="inline-flex items-baseline gap-1.5 min-w-0 max-w-full text-base sm:text-lg [overflow-wrap:anywhere] break-words"
+                              >
+                                <FormattedMathNode expr={item} />
+                              </div>
+                            ))}
+                          </React.Fragment>
+                        ))}
+                      </div>
                     </div>
                   ) : (
-                    <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2 py-1">
-                      {layout.flat.map((g, gIdx) => (
-                        <div key={gIdx} className="inline-flex items-baseline gap-1.5 shrink-0 text-base sm:text-lg">
-                          <FormattedMathNode expr={g} />
-                        </div>
-                      ))}
+                    <div className="w-full max-w-full overflow-x-auto py-1 no-scrollbar">
+                      <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2 min-w-0 max-w-full">
+                        {layout.flat.map((g, gIdx) => (
+                          <div
+                            key={gIdx}
+                            className="inline-flex items-baseline gap-1.5 min-w-0 max-w-full break-words [overflow-wrap:anywhere] text-base sm:text-lg"
+                          >
+                            <FormattedMathNode expr={g} />
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </section>
@@ -1521,12 +1599,17 @@ export default function MathLabView({ deckTitle = 'Math Lab', onBack, cards, dec
                   <h2 style={{ margin: 0 }}>Known Variables</h2>
                   <span className="text-[11px] text-[var(--muted)]">Given</span>
                 </div>
-                <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2 py-1">
-                  {givenList.map((g, gIdx) => (
-                    <div key={gIdx} className="inline-flex items-baseline gap-1.5 shrink-0 text-base sm:text-lg">
-                      <FormattedMathNode expr={g} />
-                    </div>
-                  ))}
+                <div className="w-full max-w-full overflow-x-auto py-1 no-scrollbar">
+                  <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2 min-w-0 max-w-full">
+                    {givenList.map((g, gIdx) => (
+                      <div
+                        key={gIdx}
+                        className="inline-flex items-baseline gap-1.5 min-w-0 max-w-full break-words [overflow-wrap:anywhere] text-base sm:text-lg"
+                      >
+                        <FormattedMathNode expr={g} />
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </section>
             )}

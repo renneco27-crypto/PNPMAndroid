@@ -332,7 +332,7 @@ function CollapsibleCodeBox({
   }
 
   return (
-    <div className={`glass-panel rounded-2xl border border-[var(--color-border)] ${compact ? 'p-3' : 'p-5'}`}>
+    <div className={`glass-panel rounded-2xl border border-[var(--color-border)] max-w-full min-w-0 overflow-hidden box-border ${compact ? 'p-3' : 'p-5'}`}>
       {(title || onOpenIDE) && (
         <div className="flex items-center justify-between mb-3 pb-2 border-b border-[var(--color-border)]">
           <div>
@@ -927,26 +927,16 @@ export default function CodeLabView({
   })
   
   const [currentIndex, setCurrentIndex] = useState(0)
+  const [labStyle, setLabStyle] = useState<'notes' | 'exam'>('notes')
   const [mode, setMode] = useState<CodeMode>('scenario')
   const [activeTab, setActiveTab] = useState<ViewTab>('notebook')
-  const [showMenu, setShowMenu] = useState(false)
   const [showSolution, setShowSolution] = useState(false)
   const [isMemoryMapOpen, setIsMemoryMapOpen] = useState(false)
+  const [showFormulaDetails, setShowFormulaDetails] = useState(false)
+  const [copiedGiven, setCopiedGiven] = useState(false)
   const { status: ttsStatus, currentItemId: ttsCurrentId, speakSingle, stop: stopTTS } = useTTS()
   const [activeSpeakingCard, setActiveSpeakingCard] = useState<string | null>(null)
   const isScrolled = useScrolledTopSpacing(4)
-
-  useEffect(() => {
-    return () => {
-      stopTTS()
-    }
-  }, [stopTTS, currentIndex, activeTab, mode])
-
-  useEffect(() => {
-    if (ttsStatus === 'idle') {
-      setActiveSpeakingCard(null)
-    }
-  }, [ttsStatus])
 
   useEffect(() => {
     const updated = parseCodeChallenges(cards)
@@ -993,7 +983,6 @@ export default function CodeLabView({
 
   const handleChallengeChange = (idx: number) => {
     setCurrentIndex(idx)
-    setShowMenu(false)
     setShowSolution(false)
     const next = challenges[idx]
     if (next) {
@@ -1301,36 +1290,48 @@ export default function CodeLabView({
     setFeedback({ status: 'idle', message: '' })
   }
 
+  const handleCopyGiven = () => {
+    const termData = getTerminalExecutionData(currentChallenge)
+    const suiteDisplay = termData.testSuiteCode || termData.invocations
+    const text = suiteDisplay || currentChallenge?.scenario?.starterTemplate || currentChallenge?.topic || ''
+    try {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopiedGiven(true)
+        setTimeout(() => setCopiedGiven(false), 1500)
+      })
+    } catch {}
+  }
+
   if (!currentChallenge || challenges.length === 0) {
     return (
-      <div className="min-h-screen bg-transparent text-[var(--color-text-primary)] flex flex-col">
-        <header className="border-b border-[var(--color-border)] glass-panel px-4 sm:px-6 py-4 flex items-center justify-between sticky top-0 z-30">
+      <div className="codelab-theme min-h-screen bg-[#050505] text-[#fff] font-sans antialiased flex flex-col">
+        <header className="sticky top-0 z-30 border-b border-[#222] bg-[#101010] px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             {onBack && (
               <button
                 onClick={onBack}
-                className="p-1.5 rounded-lg border border-[var(--color-border)] hover:bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] hover:text-white transition-colors cursor-pointer"
+                className="p-1.5 rounded-lg border border-[#222] hover:bg-[#191919] text-white transition-colors cursor-pointer"
                 title="Back"
               >
                 <ArrowLeft size={16} />
               </button>
             )}
-            <span className="text-sm font-semibold text-white tracking-wide">{deckTitle}</span>
+            <div className="logo text-xl font-black text-[#2fd16a] uppercase">CodeLab</div>
           </div>
         </header>
 
         <main className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-[var(--color-surface-2)] border border-[var(--color-border)] flex items-center justify-center text-[var(--color-text-muted)] mb-4">
+          <div className="w-16 h-16 rounded-2xl bg-[#191919] border border-[#222] flex items-center justify-center text-neutral-400 mb-4">
             <Terminal size={32} />
           </div>
           <h2 className="text-xl font-bold text-white mb-2">No Coding Challenges Found</h2>
-          <p className="text-sm text-[var(--color-text-secondary)] max-w-md mb-6">
+          <p className="text-sm text-neutral-400 max-w-md mb-6">
             This deck does not contain cards with type &quot;code&quot; or &quot;code_challenge&quot;.
           </p>
           {onBack && (
             <button
               onClick={onBack}
-              className="px-5 py-2.5 rounded-xl bg-[var(--color-surface-2)] text-white font-medium hover:bg-[var(--color-surface-3)] border border-[var(--color-border)] transition-all cursor-pointer flex items-center gap-2"
+              className="px-5 py-2.5 rounded-xl bg-[#191919] text-white font-medium hover:bg-[#222] border border-[#222] transition-all cursor-pointer flex items-center gap-2"
             >
               <ArrowLeft size={16} />
               <span>Back to Deck</span>
@@ -1343,236 +1344,719 @@ export default function CodeLabView({
 
   const lines = userCode.split('\n')
   const ext = langKey === 'java' ? 'java' : langKey === 'sql' ? 'sql' : langKey === 'python' ? 'py' : 'js'
+  const termData = getTerminalExecutionData(currentChallenge)
+  const suiteDisplay = termData.testSuiteCode || termData.invocations
+  const syntaxBlueprint = currentChallenge.codeLabData?.syntax_formula || currentChallenge.scenario?.starterTemplate || ''
+  const finalExpected = currentChallenge.scenario?.simulatedOutput || currentChallenge.bugHunter?.simulatedOutput || termData.stdout || 'Verified'
+  const dataMap = currentChallenge.codeLabData?.data_map || []
 
   return (
-    <div className="min-h-screen bg-transparent text-[var(--color-text-primary)] font-sans antialiased flex flex-col pb-10">
-      
-      {/* ─────────────────────────────────────────────────────────────
-          1. STRUCTURED TOP NAVIGATION BAR (GLASS & FLUID - EXACT MATCH TO MATHLAB)
-         ───────────────────────────────────────────────────────────── */}
-      <header className={`sticky top-0 z-30 border-b border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur-xl px-3 sm:px-6 transition-[padding,min-height,box-shadow] duration-200 ease-out flex flex-col justify-end ${
-        isScrolled
-          ? 'pt-[max(calc(env(safe-area-inset-top,0px)+7px),33px)] pb-2.5 min-h-[71px] sm:pt-2.5 sm:pb-2.5 sm:min-h-0 shadow-md shadow-black/20'
-          : 'pt-[max(calc(env(safe-area-inset-top,0px)+7px),17px)] pb-2.5 sm:pt-2.5'
-      }`}>
-        <div className="max-w-6xl mx-auto w-full flex items-center justify-between gap-2">
-          {/* Left: Back & Context (Truncated Cleanly) */}
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-            {onBack && (
-              <button
-                onClick={onBack}
-                className="p-1.5 rounded-lg border border-[var(--color-border)] hover:bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] hover:text-white transition-colors cursor-pointer shrink-0"
-                title="Back"
-              >
-                <ArrowLeft size={16} />
-              </button>
-            )}
-            <span className="text-sm font-semibold text-white tracking-wide truncate">
-              {deckTitle}
-            </span>
-          </div>
+    <div className="codelab-theme min-h-screen bg-[var(--bg)] text-[var(--text)] antialiased transition-colors selection:bg-[#2fd16a] selection:text-black pb-24">
+      {/* SCOPED STYLES MATCHING MathLab_ Center of Mass.html WITH GREEN CODELAB THEME */}
+      <style>{`
+        .codelab-theme {
+          --bg: #050505;
+          --card: #101010;
+          --card2: #191919;
+          --text: #ffffff;
+          --muted: #a8a8a8;
+          --line: #222222;
+          --green: #2fd16a;
+          --okbg: #17582d;
+          --okt: #ffffff;
+          --hero: #052e16;
+        }
+        @media (prefers-color-scheme: light) {
+          :root:not([data-theme="dark"]) .codelab-theme {
+            --bg: #f4f4f4;
+            --card: #ffffff;
+            --card2: #f0f0f0;
+            --text: #111111;
+            --muted: #666666;
+            --line: #e2e2e2;
+            --green: #14a44d;
+            --okbg: #17703a;
+            --okt: #ffffff;
+            --hero: #dcfce7;
+          }
+        }
+        :root[data-theme="light"] .codelab-theme {
+          --bg: #f4f4f4;
+          --card: #ffffff;
+          --card2: #f0f0f0;
+          --text: #111111;
+          --muted: #666666;
+          --line: #e2e2e2;
+          --green: #14a44d;
+          --okbg: #17703a;
+          --okt: #ffffff;
+          --hero: #dcfce7;
+        }
 
-          {/* Center: View Switcher Tabs (2-Pill Clean Match) */}
-          <div className="flex items-center bg-[var(--color-surface)] border border-[var(--color-border)] p-0.5 rounded-xl text-xs font-medium shrink-0">
+        .codelab-theme main {
+          max-width: 640px;
+          width: 100%;
+          margin: 0 auto;
+          padding: max(calc(env(safe-area-inset-top, 0px) + 12px), 20px) 14px 48px;
+          min-width: 0;
+          box-sizing: border-box;
+          overflow-x: hidden;
+        }
+        .codelab-theme .bar {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 4px 2px 14px;
+        }
+        .codelab-theme .logo {
+          flex: 1;
+          font-size: 1.7rem;
+          font-weight: 900;
+          letter-spacing: -.03em;
+          color: var(--green);
+          text-transform: uppercase;
+        }
+        .codelab-theme .avatar {
+          width: 36px;
+          height: 36px;
+          border-radius: 50%;
+          background: var(--green);
+          display: grid;
+          place-items: center;
+          color: #000;
+          font-weight: 800;
+          font-size: 0.85rem;
+        }
+        .codelab-theme .hero {
+          border-radius: 16px;
+          padding: 20px 16px 14px;
+          margin: 0 0 12px;
+          background: linear-gradient(170deg, var(--hero) 0%, var(--card) 100%);
+          border: 1px solid var(--line);
+          max-width: 100%;
+          min-width: 0;
+          overflow: hidden;
+          box-sizing: border-box;
+        }
+        .codelab-theme .tag {
+          font-size: .75rem;
+          font-weight: 800;
+          letter-spacing: .12em;
+          text-transform: uppercase;
+          color: var(--green);
+          margin: 0 0 8px;
+        }
+        .codelab-theme h1 {
+          font-size: 1.65rem;
+          line-height: 1.15;
+          font-weight: 900;
+          margin: 0 0 12px;
+          letter-spacing: -.02em;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          max-width: 100%;
+        }
+        .codelab-theme .chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-bottom: 10px;
+        }
+        .codelab-theme .chip {
+          background: var(--card2);
+          border-radius: 999px;
+          padding: 5px 14px;
+          font-size: .85rem;
+          font-weight: 600;
+        }
+        .codelab-theme .card {
+          background: var(--card);
+          border: 1px solid var(--line);
+          border-radius: 14px;
+          padding: 16px;
+          margin: 0 0 12px;
+          max-width: 100%;
+          min-width: 0;
+          box-sizing: border-box;
+          overflow: hidden;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+        }
+        .codelab-theme .card * {
+          box-sizing: border-box;
+        }
+        .codelab-theme .head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin: 0 0 12px;
+          max-width: 100%;
+          min-width: 0;
+        }
+        .codelab-theme h2 {
+          font-size: 1.15rem;
+          font-weight: 800;
+          margin: 0;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          min-width: 0;
+        }
+        .codelab-theme .btn {
+          background: none;
+          border: 0;
+          color: var(--green);
+          font: 600 .95rem system-ui, sans-serif;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          padding: 6px;
+          cursor: pointer;
+        }
+        .codelab-theme p {
+          margin: 0;
+        }
+        .codelab-theme .lab {
+          font-size: .72rem;
+          font-weight: 700;
+          color: var(--muted);
+          margin: 0 0 6px;
+          text-transform: uppercase;
+          letter-spacing: .1em;
+        }
+        .codelab-theme .grid {
+          display: grid;
+          grid-template-columns: max-content max-content minmax(0, 1fr);
+          column-gap: .55em;
+          row-gap: .4em;
+          align-items: baseline;
+          min-width: 0;
+          max-width: 100%;
+          overflow-x: auto;
+          box-sizing: border-box;
+        }
+        .codelab-theme .pair {
+          grid-template-columns: repeat(2, max-content max-content max-content);
+          font: 1.1rem Georgia, serif;
+          padding: 0 2px;
+          min-width: 0;
+          max-width: 100%;
+          overflow-x: auto;
+        }
+        .codelab-theme .pair .g2 {
+          padding-left: 2.2em;
+        }
+        .codelab-theme .pair .r {
+          white-space: nowrap;
+        }
+        .codelab-theme .eqbox {
+          background: var(--card2);
+          border-radius: 10px;
+          padding: 12px 14px;
+          font: 0.95rem/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+          overflow-x: auto;
+          overflow-y: hidden;
+          max-width: 100%;
+          min-width: 0;
+          box-sizing: border-box;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          -webkit-overflow-scrolling: touch;
+        }
+        .codelab-theme .frm {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+          min-width: 0;
+          max-width: 100%;
+        }
+        .codelab-theme .frm > div {
+          flex: 1 1 130px;
+          min-width: 0;
+          max-width: 100%;
+        }
+        .codelab-theme .frm > div:first-child {
+          flex: 2 1 250px;
+          min-width: 0;
+          max-width: 100%;
+        }
+        .codelab-theme .note {
+          display: none;
+          margin-top: 12px;
+          color: var(--muted);
+          font-size: .95rem;
+        }
+        .codelab-theme .note.on {
+          display: block;
+        }
+        .codelab-theme .step {
+          display: grid;
+          grid-template-columns: 2rem minmax(0, 1fr);
+          gap: 12px;
+          padding: 14px 0;
+          border-top: 1px solid var(--line);
+          min-width: 0;
+          max-width: 100%;
+          overflow: hidden;
+        }
+        .codelab-theme .step:first-of-type {
+          border-top: 0;
+          padding-top: 0;
+        }
+        .codelab-theme .num {
+          width: 2rem;
+          height: 2rem;
+          border-radius: 50%;
+          background: var(--green);
+          color: #000;
+          font-weight: 800;
+          display: grid;
+          place-items: center;
+          font-size: .95rem;
+        }
+        .codelab-theme .t {
+          font-weight: 600;
+          margin: 3px 0 8px;
+        }
+        .codelab-theme .final {
+          background: var(--okbg);
+          color: var(--okt);
+          border-radius: 12px;
+          padding: 16px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin: 0 0 12px;
+          max-width: 100%;
+          min-width: 0;
+          box-sizing: border-box;
+          overflow: hidden;
+        }
+        .codelab-theme .final > div:first-child {
+          flex: 1;
+          min-width: 0;
+          overflow: hidden;
+        }
+        .codelab-theme .final small {
+          display: block;
+          font-size: .72rem;
+          font-weight: 800;
+          letter-spacing: .14em;
+          text-transform: uppercase;
+          opacity: .9;
+        }
+        .codelab-theme .final .v {
+          font: 600 1.35rem/1.3 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+          overflow-x: auto;
+          overflow-wrap: anywhere;
+          word-break: break-all;
+          max-width: 100%;
+          min-width: 0;
+        }
+        .codelab-theme .chk {
+          width: 44px;
+          height: 44px;
+          border-radius: 50%;
+          border: 2px solid #5be08c;
+          display: grid;
+          place-items: center;
+          color: #5be08c;
+          flex: none;
+        }
+        .codelab-theme .big {
+          border-left: 4px solid var(--green);
+        }
+        .codelab-theme .sym {
+          display: grid;
+          grid-template-columns: minmax(0, 5.5rem) minmax(0, 1fr);
+          min-width: 0;
+          max-width: 100%;
+          overflow-x: auto;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+        }
+        .codelab-theme .sym > * {
+          padding: 10px 0;
+          border-top: 1px solid var(--line);
+          min-width: 0;
+        }
+        .codelab-theme .sym > :nth-child(-n+2) {
+          border-top: 0;
+        }
+        .codelab-theme .sym .s {
+          font: 600 0.95rem ui-monospace, SFMono-Regular, Menlo, monospace;
+          overflow-wrap: anywhere;
+          word-break: break-all;
+          min-width: 0;
+        }
+        .codelab-theme .sym b {
+          display: block;
+          font-weight: 600;
+        }
+        .codelab-theme .sym .u {
+          display: block;
+          color: var(--green);
+          font-size: .85rem;
+          font-weight: 600;
+        }
+        .codelab-theme nav {
+          position: fixed;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: var(--card);
+          border-top: 1px solid var(--line);
+          padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0px));
+          z-index: 40;
+        }
+        .codelab-theme nav div {
+          max-width: 640px;
+          margin: 0 auto;
+          display: flex;
+          justify-content: space-around;
+        }
+        .codelab-theme nav span {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 2px;
+          font-size: .72rem;
+          color: var(--muted);
+          min-width: 56px;
+          cursor: pointer;
+        }
+        .codelab-theme nav span.on {
+          color: var(--green);
+          font-weight: 700;
+        }
+      `}</style>
+
+      <main>
+        {/* TOP BAR */}
+        <div className="bar">
+          {onBack && (
             <button
-              onClick={() => setActiveTab('ide')}
-              className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
-                activeTab === 'ide' ? 'bg-[var(--color-surface-3)] text-white font-semibold shadow-sm' : 'text-[var(--color-text-secondary)] hover:text-white'
+              onClick={onBack}
+              className="p-1 rounded-lg hover:bg-[var(--card2)] text-[var(--muted)] hover:text-[var(--text)] transition-colors cursor-pointer shrink-0"
+              title="Back"
+            >
+              <ArrowLeft size={20} />
+            </button>
+          )}
+
+          <div className="logo">CodeLab</div>
+
+          {/* Segmented Mode Switcher (Notes vs Exam) */}
+          <div className="flex items-center p-0.5 rounded-lg bg-[var(--card2)] border border-[var(--line)] shrink-0">
+            <button
+              onClick={() => setLabStyle('notes')}
+              className={`px-3 py-1 rounded text-xs font-semibold transition-all cursor-pointer ${
+                labStyle === 'notes'
+                  ? 'bg-[var(--green)] text-black font-bold'
+                  : 'text-[var(--muted)] hover:text-[var(--text)]'
               }`}
             >
-              <Code2 size={12} />
-              <span>IDE</span>
+              Notes
             </button>
             <button
-              onClick={() => setActiveTab('notebook')}
-              className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
-                activeTab === 'notebook' ? 'bg-[var(--color-surface-3)] text-white font-semibold shadow-sm' : 'text-[var(--color-text-secondary)] hover:text-white'
+              onClick={() => setLabStyle('exam')}
+              className={`px-3 py-1 rounded text-xs font-semibold transition-all cursor-pointer ${
+                labStyle === 'exam'
+                  ? 'bg-[var(--green)] text-black font-bold'
+                  : 'text-[var(--muted)] hover:text-[var(--text)]'
               }`}
             >
-              <BookOpen size={12} />
-              <span>Notebook</span>
+              Exam
             </button>
           </div>
 
-          {/* Right: Challenge Stepper & Dropdown */}
-          <div className="relative flex items-center gap-1 shrink-0">
+          {/* Avatar in Green */}
+          <div className="avatar">CL</div>
+        </div>
+
+        {/* PROMINENT CARD SWITCHER BAR (Direct top buttons to access all challenges/cards) */}
+        {challenges.length > 1 && (
+          <div className="mb-3.5 p-2 rounded-2xl bg-[var(--card)] border border-[var(--line)] shadow-sm flex items-center justify-between gap-2 select-none">
             <button
               onClick={() => handleChallengeChange(Math.max(0, currentIndex - 1))}
               disabled={currentIndex === 0}
-              className="p-1.5 rounded-lg border border-[var(--color-border)] hover:bg-[var(--color-surface-2)] disabled:opacity-25 text-white transition-colors cursor-pointer"
-              title="Previous Challenge"
+              className="px-2.5 py-1.5 rounded-xl border border-[var(--line)] bg-[var(--card2)] disabled:opacity-20 text-xs font-bold text-[var(--text)] flex items-center gap-1 hover:border-[var(--green)] transition-all cursor-pointer shrink-0"
+              title="Previous Card"
             >
-              <ChevronLeft size={15} />
+              <ChevronLeft size={16} />
+              <span className="hidden sm:inline">Prev</span>
             </button>
 
-            <button
-              onClick={() => setShowMenu(!showMenu)}
-              className="px-3 py-1.5 rounded-xl border border-[var(--color-border-strong)] bg-neutral-900/95 dark:bg-neutral-950 text-xs font-semibold text-white flex items-center gap-1.5 shadow-md hover:bg-neutral-800 transition-all cursor-pointer"
-            >
-              <span className="font-mono text-white font-bold">{currentIndex + 1}/{challenges.length}</span>
-              <ChevronDown size={14} className={`text-neutral-300 transition-transform ${showMenu ? 'rotate-180' : ''}`} />
-            </button>
+            {/* Direct Card Pills: [Card 1] [Card 2] [Card 3] */}
+            <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 px-1 no-scrollbar">
+              {challenges.map((c, i) => (
+                <button
+                  key={c.id || i}
+                  onClick={() => handleChallengeChange(i)}
+                  className={`min-w-[34px] h-[34px] px-2.5 rounded-xl text-xs font-extrabold flex items-center justify-center transition-all cursor-pointer shrink-0 ${
+                    currentIndex === i
+                      ? 'bg-[var(--green)] text-black shadow-[0_2px_10px_rgba(47,209,106,0.45)] scale-105'
+                      : 'bg-[var(--card2)] text-[var(--muted)] hover:text-[var(--text)] border border-[var(--line)]'
+                  }`}
+                  title={`Card ${i + 1}: ${c.topic}`}
+                >
+                  <span>Card {i + 1}</span>
+                </button>
+              ))}
+            </div>
 
             <button
               onClick={() => handleChallengeChange(Math.min(challenges.length - 1, currentIndex + 1))}
               disabled={currentIndex === challenges.length - 1}
-              className="p-1.5 rounded-lg border border-[var(--color-border)] hover:bg-[var(--color-surface-2)] disabled:opacity-25 text-white transition-colors cursor-pointer"
-              title="Next Challenge"
+              className="px-2.5 py-1.5 rounded-xl border border-[var(--line)] bg-[var(--card2)] disabled:opacity-20 text-xs font-bold text-[var(--text)] flex items-center gap-1 hover:border-[var(--green)] transition-all cursor-pointer shrink-0"
+              title="Next Card"
             >
-              <ChevronRight size={15} />
+              <span className="hidden sm:inline">Next</span>
+              <ChevronRight size={16} />
             </button>
-
-            {showMenu && (
-              <div className="absolute top-full right-0 mt-2 w-72 max-h-80 overflow-y-auto bg-neutral-900 border border-neutral-700 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
-                <div className="px-3 py-2 text-[10px] font-mono uppercase tracking-widest text-neutral-400 font-semibold border-b border-neutral-800">
-                  Select Challenge ({challenges.length})
-                </div>
-                {challenges.map((c, i) => (
-                  <button
-                    key={c.id}
-                    onClick={() => handleChallengeChange(i)}
-                    className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-colors my-0.5 cursor-pointer ${
-                      currentIndex === i
-                        ? 'bg-[var(--color-surface-3)] text-white font-semibold border border-[var(--color-border)]'
-                        : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-2)] hover:text-white'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 truncate">
-                      <span className="font-mono text-[10px] text-[var(--color-text-muted)] shrink-0">#{i + 1}</span>
-                      <span className="truncate">{c.topic}</span>
-                    </div>
-                    {currentIndex === i && <Check size={13} className="text-[#10b981] shrink-0 ml-2" />}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
-        </div>
-      </header>
+        )}
 
-      {/* ─────────────────────────────────────────────────────────────
-          2. WORKSPACE CONTENT AREA (EXACT MATHLAB RESPONSIVE GRID)
-         ───────────────────────────────────────────────────────────── */}
-      <main className="max-w-6xl w-full mx-auto px-4 sm:px-6 pt-5">
-        
-        {/* Challenge Topic Title (Clean, no category noise) */}
-        <div className="mb-5">
-          <h1 className="text-lg sm:text-2xl font-bold text-white tracking-tight break-words">
-            {currentChallenge.topic}
-          </h1>
-        </div>
+        {/* HERO SECTION */}
+        <header className="hero">
+          <p className="tag">Notebook · Challenge {currentIndex + 1} of {challenges.length}</p>
+          <h1>{currentChallenge.topic}</h1>
+          <div className="chips">
+            <span className="chip">{langKey.toUpperCase()}</span>
+            <span className="chip">{currentChallenge.category || 'Algorithms'}</span>
+            <span className="chip">{labStyle === 'exam' ? (mode === 'bug_hunter' ? 'Bug Hunter' : mode === 'practice' ? 'Practice' : 'Build') : 'Notes Style'}</span>
+          </div>
 
-        {/* Studio View */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-          
-          {/* LEFT / PRIMARY COLUMN: PRACTICE FIRST, THEN INTERACTIVE IDE RUNNER */}
-          <div className={`space-y-5 ${activeTab === 'ide' ? 'block' : 'hidden lg:block'} lg:col-span-7`}>
-            
-            {/* SOLUTION & RUNNER: FULL-POWER IDE */}
-            <div className="glass-panel rounded-2xl border border-[var(--color-border)] p-5 sm:p-6 shadow-sm space-y-4">
-              
-              {/* Controls Header */}
-              <div className="flex flex-row items-center justify-between gap-2 overflow-x-auto no-scrollbar pb-3 border-b border-[var(--color-border)]">
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center bg-[var(--color-surface)] border border-[var(--color-border)] p-1 rounded-xl gap-1 text-xs font-semibold overflow-x-auto no-scrollbar">
-                    <button
-                      onClick={() => setMode('scenario')}
-                      className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                        mode === 'scenario' ? 'bg-[var(--color-surface-3)] text-white shadow-sm' : 'text-[var(--color-text-secondary)] hover:text-white'
-                      }`}
-                    >
-                      <FileCode size={13} />
-                      <span>Build Mode</span>
-                    </button>
-                    <button
-                      onClick={() => setMode('bug_hunter')}
-                      className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                        mode === 'bug_hunter' ? 'bg-[var(--color-surface-3)] text-white shadow-sm' : 'text-[var(--color-text-secondary)] hover:text-white'
-                      }`}
-                    >
-                      <Bug size={13} />
-                      <span>Bug Hunter</span>
-                    </button>
-                    {practice && (
-                      <button
-                        onClick={() => setMode('practice')}
-                        className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                          mode === 'practice' ? 'bg-[var(--color-surface-3)] text-white shadow-sm' : 'text-[var(--color-text-secondary)] hover:text-white'
-                        }`}
-                      >
-                        <Sparkles size={13} className="text-[#10b981]" />
-                        <span>Interactive Practice</span>
-                      </button>
-                    )}
+          {/* Signature / Blueprint preview */}
+          {syntaxBlueprint && (
+            <div className="eqbox mt-2 text-xs sm:text-sm">
+              <code>{formatCodeSnippet(syntaxBlueprint)}</code>
+            </div>
+          )}
+        </header>
+
+        {/* ===================== NOTES STYLE ===================== */}
+        {labStyle === 'notes' && (
+          <>
+            {/* 1. IN PLAIN WORDS CARD */}
+            {(currentChallenge.codeLabData?.in_plain_words || currentChallenge.description) && (
+              <section className="card">
+                <div className="head">
+                  <h2>In plain words</h2>
+                  <button
+                    onClick={() => {
+                      if (activeSpeakingCard === 'in_plain_words') {
+                        stopTTS()
+                        setActiveSpeakingCard(null)
+                      } else {
+                        setActiveSpeakingCard('in_plain_words')
+                        speakSingle(currentChallenge.codeLabData?.in_plain_words || currentChallenge.description)
+                      }
+                    }}
+                    className="btn text-xs"
+                    title="Read intuition"
+                  >
+                    {activeSpeakingCard === 'in_plain_words' ? <VolumeX size={15} /> : <Volume2 size={15} />}
+                    <span>{activeSpeakingCard === 'in_plain_words' ? 'Stop' : 'Listen'}</span>
+                  </button>
+                </div>
+                <p className="leading-relaxed">
+                  <MathFormattedText text={currentChallenge.codeLabData?.in_plain_words || currentChallenge.description || ''} />
+                </p>
+              </section>
+            )}
+
+            {/* 2. GIVEN CARD */}
+            {suiteDisplay && (
+              <section className="card">
+                <div className="head">
+                  <h2>Given</h2>
+                  <button className="btn" onClick={handleCopyGiven} aria-label="Copy given suite">
+                    <Copy size={16} />
+                    <span>{copiedGiven ? 'Copied' : ''}</span>
+                  </button>
+                </div>
+                <div className="eqbox text-xs">
+                  <code>{suiteDisplay}</code>
+                </div>
+              </section>
+            )}
+
+            {/* 3. FORMULA / STARTER CODE CARD */}
+            <section className="card">
+              <div className="head">
+                <h2>Starter &amp; Syntax</h2>
+                <button className="btn" onClick={() => setShowFormulaDetails(!showFormulaDetails)}>
+                  <span>See details</span>
+                  <ChevronRight size={16} className={`transition-transform ${showFormulaDetails ? 'rotate-90' : ''}`} />
+                </button>
+              </div>
+              <div className="frm">
+                <div style={{ flex: '1 1 100%' }}>
+                  <p className="lab">Template Blueprint</p>
+                  <div className="eqbox text-xs">
+                    <code>{formatCodeSnippet(currentChallenge.scenario?.starterTemplate || currentChallenge.scenario?.sampleSolution || '')}</code>
                   </div>
                 </div>
+              </div>
+              <p className={`note ${showFormulaDetails ? 'on' : ''}`}>
+                Analyze signature types, parameter definitions, and memory lifecycle constraints before executing test scenarios.
+              </p>
+            </section>
 
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    onClick={() => setShowSolution(!showSolution)}
-                    className="px-3 py-1.5 rounded-lg border border-[var(--color-border)] hover:bg-[var(--color-surface-2)] text-xs font-mono text-[var(--color-text-secondary)] hover:text-white flex items-center gap-1.5 transition-all cursor-pointer"
-                  >
-                    <Eye size={13} />
-                    <span>{showSolution ? 'Hide Solution' : 'View Solution'}</span>
-                  </button>
-                  <button
-                    onClick={handleReset}
-                    className="px-3 py-1.5 rounded-lg border border-[var(--color-border)] hover:bg-[var(--color-surface-2)] text-xs font-mono text-[var(--color-text-secondary)] hover:text-white flex items-center gap-1.5 transition-all cursor-pointer"
-                  >
-                    <RotateCcw size={13} />
-                    <span>Reset</span>
-                  </button>
-                  <button
-                    onClick={handleRun}
-                    className="px-4 py-1.5 rounded-lg bg-white text-black font-semibold text-xs font-mono flex items-center gap-1.5 hover:bg-slate-200 transition-all cursor-pointer active:scale-95"
-                  >
-                    <Play size={13} fill="currentColor" />
-                    <span>Run Code</span>
-                  </button>
+            {/* 4. STEP-BY-STEP SOLUTION / LOGIC BREAKDOWN */}
+            <section className="card">
+              <h2 style={{ marginBottom: '14px' }}>Step-by-step solution</h2>
+              
+              <div className="step">
+                <div className="num">1</div>
+                <div>
+                  <p className="t">Method signature and input parameters</p>
+                  <div className="eqbox text-xs">
+                    <code>{formatCodeSnippet(currentChallenge.scenario?.starterTemplate || '')}</code>
+                  </div>
                 </div>
               </div>
 
-              {/* Prompt Statement */}
+              <div className="step">
+                <div className="num">2</div>
+                <div>
+                  <p className="t">Algorithmic implementation</p>
+                  <div className="eqbox text-xs">
+                    <code>{formatCodeSnippet(currentChallenge.scenario?.sampleSolution || '')}</code>
+                  </div>
+                </div>
+              </div>
+
+              <div className="step">
+                <div className="num">3</div>
+                <div>
+                  <p className="t">Execution verification and return</p>
+                  <div className="eqbox text-xs">
+                    <code>{finalExpected}</code>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* 5. FINAL EXPECTED OUTPUT BANNER */}
+            <section className="final">
               <div>
-                <span className="text-[10px] font-mono uppercase tracking-wider text-[var(--color-text-muted)] font-semibold block mb-1">
-                  {mode === 'scenario' 
-                    ? 'Challenge Objective' 
-                    : mode === 'bug_hunter' 
-                    ? 'Bug Hunter Objective' 
-                    : 'Interactive Practice Objective'}
-                </span>
-                <div className="text-sm text-slate-200 leading-relaxed font-sans">
-                  <MathFormattedText text={modeData?.scenarioPrompt || ''} />
+                <small>Expected Output</small>
+                <div className="v">{finalExpected}</div>
+              </div>
+              <div className="chk">
+                <Check size={24} />
+              </div>
+            </section>
+
+            {/* 6. BIG IDEA CARD */}
+            <section className="card big">
+              <h2 style={{ marginBottom: '8px' }}>Big idea</h2>
+              <p className="leading-relaxed">
+                <MathFormattedText
+                  text={
+                    currentChallenge.codeLabData?.in_plain_words
+                      ? `Master the fundamental flow of ${currentChallenge.topic}. Pay attention to edge conditions and return signatures.`
+                      : 'Consistent code architecture and proper contract handling prevent runtime exceptions and memory degradation.'
+                  }
+                />
+              </p>
+            </section>
+
+            {/* 7. PARAMETERS AND TYPES CARD */}
+            {dataMap.length > 0 && (
+              <section className="card">
+                <h2 style={{ marginBottom: '6px' }}>Parameters and Types</h2>
+                <div className="sym">
+                  {dataMap.map((row, idx) => (
+                    <React.Fragment key={idx}>
+                      <span className="s font-mono text-xs">{row.fn || row.section}</span>
+                      <div>
+                        <b>{row.concept}</b>
+                        <span className="u">
+                          <MathFormattedText text={row.memory_effect || ''} />
+                        </span>
+                      </div>
+                    </React.Fragment>
+                  ))}
+                </div>
+              </section>
+            )}
+          </>
+        )}
+
+        {/* ===================== EXAM STYLE ===================== */}
+        {labStyle === 'exam' && (
+          <>
+            <section className="card">
+              <div className="head">
+                <h2>Interactive IDE &amp; Runner</h2>
+                <div className="flex items-center gap-1 bg-[var(--card2)] p-0.5 rounded-lg text-xs">
+                  <button
+                    onClick={() => setMode('scenario')}
+                    className={`px-2.5 py-1 rounded cursor-pointer transition-colors ${
+                      mode === 'scenario' ? 'bg-[var(--green)] text-black font-bold' : 'text-[var(--muted)] hover:text-[var(--text)]'
+                    }`}
+                  >
+                    Build
+                  </button>
+                  <button
+                    onClick={() => setMode('bug_hunter')}
+                    className={`px-2.5 py-1 rounded cursor-pointer transition-colors ${
+                      mode === 'bug_hunter' ? 'bg-[var(--green)] text-black font-bold' : 'text-[var(--muted)] hover:text-[var(--text)]'
+                    }`}
+                  >
+                    Bug Hunter
+                  </button>
+                  {practice && (
+                    <button
+                      onClick={() => setMode('practice')}
+                      className={`px-2.5 py-1 rounded cursor-pointer transition-colors ${
+                        mode === 'practice' ? 'bg-[var(--green)] text-black font-bold' : 'text-[var(--muted)] hover:text-[var(--text)]'
+                      }`}
+                    >
+                      Practice
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {/* Reference Solution if toggled */}
+              {/* Objective Statement */}
+              <div className="mb-3">
+                <p className="lab">
+                  {mode === 'scenario' ? 'Objective' : mode === 'bug_hunter' ? 'Debug Objective' : 'Practice Objective'}
+                </p>
+                <p className="text-sm text-neutral-300">
+                  <MathFormattedText text={modeData?.scenarioPrompt || ''} />
+                </p>
+              </div>
+
+              {/* Solution toggle */}
               {showSolution && modeData && (
-                <div className="rounded-xl bg-[var(--color-surface)] border border-[var(--color-border-strong)] p-4 text-xs font-mono text-emerald-300 whitespace-pre-wrap leading-relaxed">
-                  <span className="text-[10px] uppercase font-bold text-[var(--color-text-muted)] block mb-2 font-mono">Reference Solution</span>
-                  {mode === 'scenario' 
-                    ? currentChallenge.scenario.sampleSolution 
-                    : mode === 'bug_hunter' 
-                    ? currentChallenge.bugHunter.cleanSolution 
-                    : (practice?.hint || practice?.starterCode || 'No reference solution available.')}
+                <div className="mb-3 eqbox text-xs text-[#2fd16a] border border-[#2fd16a]/30">
+                  <p className="lab text-[#2fd16a]">Reference Solution</p>
+                  <code>
+                    {mode === 'scenario'
+                      ? currentChallenge.scenario.sampleSolution
+                      : mode === 'bug_hunter'
+                      ? currentChallenge.bugHunter.cleanSolution
+                      : (practice?.hint || practice?.starterCode || '')}
+                  </code>
                 </div>
               )}
 
               {/* Code Editor Container */}
-              <div className="rounded-xl border border-[var(--color-border)] overflow-hidden flex flex-col bg-[var(--color-surface)] shadow-inner">
-                <div className="bg-[var(--color-surface-2)] px-4 py-2 border-b border-[var(--color-border)] flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
-                  <div className="flex items-center gap-2">
-                    <span className="text-slate-300 font-medium">Main.{ext}</span>
-                    <span className="text-[var(--color-text-muted)]">{lines.length} lines</span>
-                  </div>
+              <div className="rounded-xl border border-[var(--line)] overflow-hidden bg-[var(--card2)] mb-3">
+                <div className="bg-[var(--card)] px-3 py-1.5 border-b border-[var(--line)] flex items-center justify-between text-xs font-mono text-[var(--muted)]">
+                  <span>Main.{ext}</span>
+                  <span>{lines.length} lines</span>
                 </div>
 
-                {/* Editor Workspace: Textarea Fills Entire Div */}
-                <div className="flex bg-[var(--color-surface)] min-h-[420px] relative">
+                <div className="flex bg-[var(--card2)] min-h-[300px]">
                   <div
                     ref={lineNumbersRef}
-                    className="select-none text-[var(--color-text-muted)] bg-[var(--color-surface)] text-right py-4 px-3 border-r border-[var(--color-border)] font-mono text-xs leading-6 shrink-0 min-w-[44px] overflow-hidden"
-                    aria-hidden="true"
+                    className="select-none text-[var(--muted)] text-right py-3 px-2 border-r border-[var(--line)] font-mono text-xs leading-5 shrink-0 min-w-[36px]"
                   >
                     {lines.map((_, i) => (
                       <div key={i}>{i + 1}</div>
@@ -1596,252 +2080,79 @@ export default function CodeLabView({
                     autoCapitalize="off"
                     autoComplete="off"
                     autoCorrect="off"
-                    className="flex-1 w-full min-h-[420px] p-4 font-mono text-sm leading-6 text-slate-100 bg-transparent outline-none resize-y overflow-auto whitespace-pre selection:bg-white/20"
-                    placeholder="// Enter your code..."
+                    className="flex-1 w-full min-h-[300px] p-3 font-mono text-xs sm:text-sm leading-5 text-[var(--text)] bg-transparent outline-none resize-y whitespace-pre"
+                    placeholder="// Enter code here..."
                   />
                 </div>
 
-                {/* Output Console Embedded */}
-                <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 font-mono text-xs max-h-48 overflow-y-auto">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="flex items-center gap-1.5 text-[var(--color-text-muted)]">
-                      <Terminal size={13} />
-                      <span>Console Output</span>
-                    </span>
-                    {feedback.status !== 'idle' && (
-                      <span className={`font-semibold flex items-center gap-1 ${
-                        feedback.status === 'success' ? 'text-[var(--color-know)]' : 'text-[var(--color-dontknow)]'
-                      }`}>
-                        {feedback.status === 'success' ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
-                        {feedback.message}
-                      </span>
-                    )}
+                {/* Actions Bar */}
+                <div className="p-2 border-t border-[var(--line)] bg-[var(--card)] flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setShowSolution(!showSolution)}
+                      className="px-2.5 py-1 rounded-lg border border-[var(--line)] hover:bg-[var(--card2)] text-xs text-[var(--muted)] hover:text-[var(--text)] cursor-pointer"
+                    >
+                      {showSolution ? 'Hide Solution' : 'View Solution'}
+                    </button>
+                    <button
+                      onClick={handleReset}
+                      className="px-2.5 py-1 rounded-lg border border-[var(--line)] hover:bg-[var(--card2)] text-xs text-[var(--muted)] hover:text-[var(--text)] cursor-pointer"
+                    >
+                      Reset
+                    </button>
                   </div>
 
-                  {feedback.output ? (
-                    <div className="p-3 rounded-xl bg-[var(--color-bg)] border border-[var(--color-border)] text-slate-200 whitespace-pre-wrap leading-relaxed text-xs">
-                      {feedback.output}
-                    </div>
-                  ) : (
-                    <p className="text-[var(--color-text-muted)] italic">Click Run Code to execute and verify output.</p>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* RIGHT / NOTEBOOK COLUMN: REFERENCE, DATA MAP & VARIATIONS */}
-          <div className={`space-y-5 ${activeTab === 'notebook' ? 'block' : 'hidden lg:block'} lg:col-span-5`}>
-            
-            {/* Overview & Core Intuition */}
-            {currentChallenge.codeLabData?.in_plain_words && (
-              <div
-                className={`glass-panel rounded-2xl border p-5 transition-all duration-200 ${
-                  activeSpeakingCard === 'core_intuition'
-                    ? 'border-[var(--color-know)] ring-2 ring-[var(--color-know)]/40 shadow-lg shadow-[var(--color-know)]/10'
-                    : 'border-[var(--color-border)]'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[11px] font-mono uppercase tracking-wider text-[var(--color-text-muted)] font-semibold">
-                    Core Intuition
-                  </span>
                   <button
-                    onClick={() => {
-                      if (activeSpeakingCard === 'core_intuition') {
-                        stopTTS()
-                        setActiveSpeakingCard(null)
-                      } else {
-                        setActiveSpeakingCard('core_intuition')
-                        speakSingle(currentChallenge.codeLabData?.in_plain_words || '')
-                      }
-                    }}
-                    className={`p-1.5 rounded-lg border transition-colors ${
-                      activeSpeakingCard === 'core_intuition'
-                        ? 'border-[var(--color-know)] text-[var(--color-know)] bg-[var(--color-know)]/10'
-                        : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-white hover:bg-[var(--color-surface-2)]'
-                    }`}
-                    title={activeSpeakingCard === 'core_intuition' ? 'Stop reading' : 'Read core intuition'}
+                    onClick={handleRun}
+                    className="px-4 py-1.5 rounded-lg bg-[var(--green)] text-black font-bold text-xs flex items-center gap-1.5 hover:opacity-90 active:scale-95 transition-all cursor-pointer"
                   >
-                    {activeSpeakingCard === 'core_intuition' ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                    <Play size={13} fill="currentColor" />
+                    <span>Run Code</span>
                   </button>
                 </div>
-                <p className="text-sm text-slate-200 leading-relaxed">
-                  {currentChallenge.codeLabData.in_plain_words}
-                </p>
               </div>
-            )}
 
-            {/* Master Syntax Formula Blueprint */}
-            {(currentChallenge.codeLabData?.syntax_formula || currentChallenge.scenario.starterTemplate) && (
-              <div className="glass-panel rounded-2xl border border-[var(--color-border)] p-5">
-                <h3 className="text-xs font-mono uppercase tracking-wider text-[var(--color-text-muted)] font-semibold mb-2.5">
-                  Master Syntax Blueprint
-                </h3>
-                <pre
-                  style={{ fontVariantLigatures: 'none' }}
-                  className="rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] p-3.5 font-mono text-xs sm:text-sm text-slate-200 overflow-x-auto leading-relaxed"
-                >
-                  <code style={{ fontVariantLigatures: 'none' }}>
-                    {formatCodeSnippet(currentChallenge.codeLabData?.syntax_formula || currentChallenge.scenario.starterTemplate)}
-                  </code>
-                </pre>
-              </div>
-            )}
-
-            {/* Laboratory Script Box */}
-            {(currentChallenge.codeLabData?.script_html || currentChallenge.scenario.sampleSolution) && (
-              <CollapsibleCodeBox
-                title="Laboratory Script"
-                subtitle="Clean implementation demonstrating concept flow."
-                code={currentChallenge.codeLabData?.script_html || currentChallenge.scenario.sampleSolution}
-                onOpenIDE={() => {
-                  setUserCode(formatCodeSnippet(currentChallenge.codeLabData?.script_html || currentChallenge.scenario.sampleSolution))
-                  setMode('scenario')
-                  setActiveTab('ide')
-                }}
-              />
-            )}
-
-            {/* Test Suite Verification (Glassmorphic Card Directly Below Laboratory Script) */}
-            {(() => {
-              const termData = getTerminalExecutionData(currentChallenge)
-              const suiteDisplay = termData.testSuiteCode || termData.invocations
-              return (
-                <div className="glass-panel rounded-2xl border border-[var(--color-border)] p-5 space-y-3.5">
-                  <div className="flex items-start justify-between gap-3 pb-2.5 border-b border-[var(--color-border)]">
-                    <div>
-                      <h3 className="text-xs font-mono uppercase tracking-wider text-[var(--color-text-muted)] font-semibold flex items-center gap-1.5">
-                        <CheckCircle2 size={13} className="text-emerald-400 shrink-0" />
-                        <span>Test Suite Verification</span>
-                      </h3>
-                      <p className="text-[11px] text-[var(--color-text-secondary)] mt-0.5">
-                        Calls methods from Laboratory Script and verifies expected {termData.outputLabel.toLowerCase()}.
-                      </p>
-                    </div>
-                    <span className="shrink-0 flex items-center gap-1.5 font-mono text-[10px] text-emerald-400 bg-emerald-950/50 border border-emerald-800/50 px-2.5 py-1 rounded-full">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                      <span>Verified</span>
+              {/* Output Console Embedded */}
+              <div className="eqbox text-xs max-h-44 overflow-y-auto">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="flex items-center gap-1 text-[var(--muted)] font-bold uppercase text-[10px]">
+                    <Terminal size={12} />
+                    <span>Console Output</span>
+                  </span>
+                  {feedback.status !== 'idle' && (
+                    <span className={`font-semibold flex items-center gap-1 ${
+                      feedback.status === 'success' ? 'text-[var(--green)]' : 'text-rose-400'
+                    }`}>
+                      {feedback.status === 'success' ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
+                      {feedback.message}
                     </span>
-                  </div>
-
-                  {suiteDisplay && (
-                    <div>
-                      <span className="text-[10px] font-mono uppercase tracking-wider text-[var(--color-text-muted)] font-semibold block mb-1.5">
-                        Test Suite Calls
-                      </span>
-                      <pre
-                        style={{ fontVariantLigatures: 'none' }}
-                        className="rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] p-3.5 font-mono text-xs sm:text-sm text-slate-200 overflow-x-auto leading-relaxed"
-                      >
-                        <code style={{ fontVariantLigatures: 'none' }}>{suiteDisplay}</code>
-                      </pre>
-                    </div>
                   )}
-
-                  <div>
-                    <span className="text-[10px] font-mono uppercase tracking-wider text-[var(--color-text-muted)] font-semibold flex items-center gap-1.5 mb-1.5">
-                      <Terminal size={12} className="text-emerald-400" />
-                      <span>Laboratory {termData.outputLabel}</span>
-                    </span>
-                    <pre
-                      style={{ fontVariantLigatures: 'none' }}
-                      className="rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] p-3.5 font-mono text-xs sm:text-sm text-emerald-300 overflow-x-auto leading-relaxed whitespace-pre-wrap"
-                    >
-                      <code style={{ fontVariantLigatures: 'none' }}>{termData.stdout}</code>
-                    </pre>
-                  </div>
                 </div>
-              )
-            })()}
-
-            {/* Code & Data Map Table (Collapsible with chevron) */}
-            {currentChallenge.codeLabData?.data_map && currentChallenge.codeLabData.data_map.length > 0 && (
-              <div className="glass-panel rounded-2xl border border-[var(--color-border)] p-5 transition-all">
-                <button
-                  onClick={() => setIsMemoryMapOpen(!isMemoryMapOpen)}
-                  className="w-full flex items-center justify-between text-left cursor-pointer group"
-                >
-                  <div className="flex items-center gap-2">
-                    <Table size={15} className="text-[#10b981]" />
-                    <h3 className="text-xs font-mono uppercase tracking-wider text-[var(--color-text-muted)] font-semibold group-hover:text-white transition-colors">
-                      Code &amp; Memory Map
-                    </h3>
-                    <span className="text-[10px] font-mono text-[var(--color-text-muted)] bg-[var(--color-surface-2)] px-1.5 py-0.5 rounded">
-                      {currentChallenge.codeLabData.data_map.length} rows
-                    </span>
-                  </div>
-                  <div className="p-1 rounded-lg hover:bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:text-white transition-all">
-                    <ChevronDown size={16} className={`transition-transform duration-200 ${isMemoryMapOpen ? 'rotate-180' : ''}`} />
-                  </div>
-                </button>
-
-                {isMemoryMapOpen && (
-                  <div className="mt-4 pt-3 border-t border-[var(--color-border)] overflow-x-auto no-scrollbar animate-in fade-in duration-150">
-                    <table className="w-full text-left text-xs">
-                      <thead>
-                        <tr className="border-b border-[var(--color-border)] text-[var(--color-text-muted)] font-mono">
-                          <th className="py-2 px-2.5 font-semibold">Section</th>
-                          <th className="py-2 px-2.5 font-semibold">Code Statement</th>
-                          <th className="py-2 px-2.5 font-semibold">Concept</th>
-                          <th className="py-2 px-2.5 font-semibold">Runtime / Memory Effect</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[var(--color-border)] font-mono">
-                        {currentChallenge.codeLabData.data_map.map((row, rIdx) => (
-                          <tr key={rIdx} className="hover:bg-white/[0.02]">
-                            <td className="py-2 px-2.5 font-bold text-slate-300">{row.section}</td>
-                            <td className="py-2 px-2.5 text-slate-200">{row.fn}</td>
-                            <td className="py-2 px-2.5 font-sans text-slate-300">{row.concept}</td>
-                            <td className="py-2 px-2.5 font-sans text-[var(--color-text-muted)]">{row.memory_effect}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                {feedback.output ? (
+                  <pre className="whitespace-pre-wrap leading-relaxed text-[var(--text)]">
+                    <code>{feedback.output}</code>
+                  </pre>
+                ) : (
+                  <p className="text-[var(--muted)] italic text-xs">Click Run Code to verify execution output.</p>
                 )}
               </div>
-            )}
+            </section>
 
-            {/* Variations & Real-World Patterns (Clean Non-Nested Cards) */}
-            {currentChallenge.codeLabData?.variations && currentChallenge.codeLabData.variations.length > 0 && (
-              <div className="glass-panel rounded-2xl border border-[var(--color-border)] p-5 space-y-4">
-                <div className="pb-2 border-b border-[var(--color-border)]">
-                  <h3 className="text-xs font-mono uppercase tracking-wider text-[var(--color-text-muted)] font-semibold">
-                    Variations &amp; Real-World Patterns
-                  </h3>
-                  <p className="text-[11px] text-[var(--color-text-secondary)] mt-0.5">Practical application patterns across codebases.</p>
-                </div>
-
-                <div className="space-y-4">
-                  {currentChallenge.codeLabData.variations.map((v, vIdx) => (
-                    <div key={vIdx} className="rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] p-4 space-y-2.5">
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="text-xs font-bold text-white font-mono break-words">
-                          {v.title}
-                        </span>
-                        <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-[var(--color-surface-2)] border border-[var(--color-border)] text-[var(--color-text-secondary)] shrink-0 mt-0.5">
-                          {v.use_case}
-                        </span>
-                      </div>
-                      {v.explanation && (
-                        <p className="text-xs text-slate-300 leading-relaxed font-sans">{v.explanation}</p>
-                      )}
-                      <pre
-                        style={{ fontVariantLigatures: 'none' }}
-                        className="rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] p-3 font-mono text-xs text-slate-200 overflow-x-auto leading-relaxed"
-                      >
-                        <code style={{ fontVariantLigatures: 'none' }}>{formatCodeSnippet(v.code)}</code>
-                      </pre>
-                    </div>
-                  ))}
-                </div>
+            {/* Expected Output Banner */}
+            <section className="final">
+              <div>
+                <small>Expected Output</small>
+                <div className="v">{finalExpected}</div>
               </div>
-            )}
-          </div>
-        </div>
+              <div className="chk">
+                <Check size={24} />
+              </div>
+            </section>
+          </>
+        )}
       </main>
 
+      {/* AI Practice Drawer */}
       {currentChallenge && (
         <AIPracticeDrawer
           kind="code"
@@ -1850,7 +2161,7 @@ export default function CodeLabView({
           currentScreenContext={{
             screen: 'code',
             topic: currentChallenge.topic,
-            activeTab,
+            activeTab: labStyle === 'notes' ? 'notebook' : 'ide',
             mode,
             language: langKey,
             userCode,
