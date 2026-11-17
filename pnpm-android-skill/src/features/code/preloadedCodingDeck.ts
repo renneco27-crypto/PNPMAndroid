@@ -31,6 +31,28 @@ export interface CodePracticeChallenge {
   simulatedOutput: string
 }
 
+export interface CodeDrillData {
+  build?: {
+    q: string
+    h?: string
+    topic?: string
+    tests: [string, string][]
+  }
+  debug?: {
+    q: string
+    h?: string
+    topic?: string
+    lines: string[]
+    fix: Record<number | string, string>
+  }
+  order?: {
+    q?: string
+    topic?: string
+    lines: string[]
+    shuffled: number[]
+  }
+}
+
 export interface UnifiedCodeChallenge {
   id: string
   rawCard?: any
@@ -44,6 +66,8 @@ export interface UnifiedCodeChallenge {
     in_plain_words?: string
     syntax_formula?: string
     script_html?: string
+    script_complete?: string
+    given?: string
     data_map?: { section: string; fn: string; concept: string; memory_effect: string }[]
     test_suite?: string
     variations?: {
@@ -52,6 +76,7 @@ export interface UnifiedCodeChallenge {
       code: string
       explanation?: string
     }[]
+    codedrill?: CodeDrillData
     practice_challenge?: CodePracticeChallenge
     bug_hunter?: {
       prompt?: string

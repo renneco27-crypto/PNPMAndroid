@@ -105,34 +105,105 @@ Rules for card counts:
   When programming code or algorithms exist, generate "code" cards using this strict separated schema:
   {
     "type": "code",
-    "front": "Topic or Function Name (e.g. Object Property Assignment)",
+    "front": "Topic or Function Name (e.g. Object Property Assignment & Transformation)",
     "source_slide": 10,
     "code_language": "javascript",
     "syntax_formula": "Object.assign(target, ...sources)",
-    "in_plain_words": "Copies all enumerable own properties from one or more source objects to a target object, returning the mutated target.",
-    "starter": "function cloneUser(user) {\\n  // TODO: return a shallow clone using Object.assign\\n}",
-    "solution": "function cloneUser(user) {\\n  return Object.assign({}, user);\\n}",
-    "output": "{ id: 1, name: 'Alice' }",
+    "in_plain_words": "Copies all enumerable own properties from one or more source objects to a target object, returning the mutated target.\\nContains 3 code variations across OOP key-value pair methods: Object.assign, Object.create, and Object.fromEntries.\\nProblem Scenario: Create a user configuration manager that applies incoming settings over system defaults without mutating the root default object.",
+    "notebook_data": {
+      "in_plain_words": "Copies all enumerable own properties from one or more source objects to a target object, returning the mutated target.\\nContains 3 code variations across OOP key-value pair methods: Object.assign, Object.create, and Object.fromEntries.\\nProblem Scenario: Create a user configuration manager that applies incoming settings over system defaults without mutating the root default object.",
+      "problem_breakdown": {
+        "given": "A default configuration object and incoming user overrides must be combined into a fresh object reference without altering defaults.",
+        "starter": "function mergeConfig(defaults, overrides) {\\n  // TODO: return merged object without mutating defaults\\n}"
+      }
+    },
+    "starter": "function mergeConfig(defaults, overrides) {\\n  // TODO: return merged object without mutating defaults\\n}",
+    "solution": "<!-- HTML Caller Host -->\\n<div id=\\\"app\\\"></div>\\n\\n<!-- Script Implementation -->\\n<script>\\nfunction mergeConfig(defaults, overrides) {\\n  return Object.assign({}, defaults, overrides);\\n}\\n\\nconst defaults = { theme: 'light', notifications: true };\\nconst overrides = { theme: 'dark' };\\nconst merged = mergeConfig(defaults, overrides);\\nconsole.log(JSON.stringify(merged));\\n</script>",
+    "output": "{\\\"theme\\\":\\\"dark\\\",\\\"notifications\\\":true}",
     "code_lab_data": {
-      "in_plain_words": "Copies all enumerable own properties from one or more source objects to a target object, returning the mutated target.",
+      "in_plain_words": "Copies all enumerable own properties from one or more source objects to a target object, returning the mutated target.\\nContains 3 code variations across OOP key-value pair methods: Object.assign, Object.create, and Object.fromEntries.\\nProblem Scenario: Create a user configuration manager that applies incoming settings over system defaults without mutating the root default object.",
       "syntax_formula": "Object.assign(target, ...sources)",
+      "given": "A default configuration object and incoming user overrides must be combined into a fresh object reference without altering defaults.",
+      "script_complete": "<!-- HTML Caller Host -->\\n<div id=\\\"app\\\"></div>\\n\\n<!-- Script Implementation -->\\n<script>\\nfunction mergeConfig(defaults, overrides) {\\n  return Object.assign({}, defaults, overrides);\\n}\\n\\nconst defaults = { theme: 'light', notifications: true };\\nconst overrides = { theme: 'dark' };\\nconst merged = mergeConfig(defaults, overrides);\\nconsole.log(JSON.stringify(merged));\\n</script>",
       "data_map": [
         { "section": "Target", "fn": "target ({})", "concept": "Destination container", "memory_effect": "Allocates fresh heap pointer" },
         { "section": "Sources", "fn": "...sources (user)", "concept": "Keys & primitive values copied", "memory_effect": "Shallow copy only" }
       ],
       "variations": [
         {
+          "title": "Object.assign() Shallow Merge",
+          "use_case": "Standard ES6 shallow copy and rightmost property override",
+          "code": "const clone = Object.assign({}, defaults, overrides);",
+          "explanation": "Copies own enumerable properties from sources into target object in order."
+        },
+        {
+          "title": "Object.create() Prototype Chaining",
+          "use_case": "Inheriting default properties via prototype chain without copying keys",
+          "code": "const childConfig = Object.create(defaults);\\nchildConfig.theme = 'dark';",
+          "explanation": "Creates a new object whose prototype points to defaults, preserving root defaults."
+        },
+        {
+          "title": "Object.fromEntries() Key-Value Mapping",
+          "use_case": "Transforming key-value tuples back into a structured dictionary",
+          "code": "const entries = Object.entries(overrides);\\nconst filtered = Object.fromEntries(entries.filter(([k]) => k !== 'secret'));",
+          "explanation": "Converts an iterable of [key, val] pairs into an object, ideal for filtering configs."
+        },
+        {
           "title": "Spread Syntax Alternative",
           "use_case": "Modern shallow cloning in ES6+",
-          "code": "const clone = { ...user };",
-          "explanation": "Equivalent shallow clone with cleaner syntax."
+          "code": "const clone = { ...defaults, ...overrides };",
+          "explanation": "Syntactic sugar for Object.assign with clean concise syntax."
         }
       ],
+      "codedrill": {
+        "build": {
+          "q": "Create a function that totals a list of prices. If total is over 100, apply a 10% discount. Return or print the amount to pay.",
+          "h": "Compute the sum first, then apply a conditional decision.",
+          "tests": [
+            ["Calculates sum", "\\b(for|reduce|sum|\\+=)\\b"],
+            ["Decides with conditional", "\\bif\\b"],
+            ["Applies 10% discount", "(0\\.9|0\\.1|10\\s*/\\s*100)"],
+            ["Returns or prints result", "\\b(return|console\\.log|print|System\\.out\\.print)\\b"]
+          ]
+        },
+        "debug": {
+          "q": "Fix the syntax errors and missing punctuation.",
+          "h": "One line is missing a block delimiter or colon, another has unclosed parentheses.",
+          "lines": [
+            "function computeTotal(prices) {",
+            "  let total = 0;",
+            "  for (let p of prices",
+            "    total += p;",
+            "  return total;",
+            "}",
+            "console.log(computeTotal([40, 60]"
+          ],
+          "fix": {
+            "2": "  for (let p of prices) {",
+            "6": "console.log(computeTotal([40, 60]));"
+          }
+        },
+        "order": {
+          "q": "Put the lines in order.",
+          "lines": [
+            "function countMatches(items, target) {",
+            "  let count = 0;",
+            "  for (let item of items) {",
+            "    if (item === target) {",
+            "      count += 1;",
+            "    }",
+            "  }",
+            "  return count;",
+            "}"
+          ],
+          "shuffled": [4, 1, 0, 7, 3, 2, 8, 5, 6]
+        }
+      },
       "practice_challenge": {
-        "prompt": "Merge defaults { theme: 'dark', sound: true } with user preferences { sound: false }.",
+        "prompt": "Merge defaults { theme: 'dark', sound: true } with user preferences { sound: false } without mutating defaults.",
         "starterCode": "function mergeConfig(userPref) {\\n  const defaults = { theme: 'dark', sound: true };\\n  // return merged config\\n}",
         "solutionKeywords": ["Object.assign", "defaults", "userPref"],
-        "explanation": "Object.assign({}, defaults, userPref) applies rightmost overrides.",
+        "explanation": "Object.assign({}, defaults, userPref) applies rightmost overrides onto a fresh empty target.",
         "simulatedOutput": "{ theme: 'dark', sound: false }"
       },
       "bug_hunter": {
@@ -147,8 +218,28 @@ Rules for card counts:
   CRITICAL RULES FOR CODE CARDS:
   - MASTER SYNTAX BLUEPRINT IN "syntax_formula": The "syntax_formula" field MUST be the generic canonical syntax pattern / signature / blueprint — like "functionName(param1, param2)" or "const result = methodName(target, ...args)" or "arr.reduce((acc, curr) => ..., initialVal)".
   - NEVER write full function implementations or multiline function bodies in "syntax_formula". Keep it strictly as the concise master syntax pattern like functionName(param1, param2) instead of writing the whole function body in master syntax.
-  - The actual implementation belongs in "solution", and starter code belongs in "starter".
-  - CODELAB DATA FOR INTERACTIVE IDE: Provide "code_lab_data" with "in_plain_words", "syntax_formula", "data_map", "variations", "practice_challenge", and "bug_hunter" so CodeLab's interactive Bug Hunter, Practice Challenge, and Notebook tabs are powered with tailored exercises.
+  - "in_plain_words" MUST HAVE 3 PARTS:
+    1. Line 1: Plain-language concept summary.
+    2. Line 2: Explicit count of code variations/scenarios: "Contains [N] code variations across [concept]: [List variations]..." (just like MathLab has how many equations in plain words).
+    3. Line 3: "Problem Scenario: [A real-world engineering challenge to solve]".
+  - GIVEN AND STARTER MUST NOT BE THE SAME:
+    * "given" (in "notebook_data.problem_breakdown.given" and "code_lab_data.given"): This is what the question/problem is, more like a problem/scenario to solve (e.g. "Create a user configuration manager that applies incoming settings over system defaults without mutating the root default object.").
+    * "starter": This is the code template / skeleton where the student writes code (e.g. "function mergeConfig(defaults, overrides) {\\n  // TODO\\n}").
+    * They MUST be completely distinct: given is the natural language problem scenario; starter is the skeleton code.
+  - NO STEP-BY-STEP SOLUTION BREAKDOWNS IN CODELAB:
+    * Do NOT output numbered step-by-step arrays for code cards.
+    * There is ONLY ONE giant complete runnable script that the concept is used from:
+      - Java: complete with class declaration, "public static void main(String[] args)", sample invocations, and "System.out.println" output.
+      - JavaScript: complete with HTML caller tags and "<script>" tags at the top separated by comment lines:
+        <!-- HTML Caller Host -->\\n<div id=\\\"app\\\"></div>\\n\\n<!-- Script Implementation -->\\n<script>\\n...\\n</script>
+      - Python: complete runnable script with proper indentation, imports, function declarations, and "if __name__ == '__main__':" block.
+      - Format inline scripts cleanly with \\n and escaped quotes so standard JSON parsers read it without errors.
+    * Stored in "solution" and "code_lab_data.script_complete".
+  - VARIATIONS: Provide at least 2-4 alternative implementations or related patterns in "code_lab_data.variations" (e.g. for OOP methods and key-value pairs: Object.assign, Object.create, Object.fromEntries, spread syntax).
+  - CODELAB EXAM DATA ("code_lab_data.codedrill"):
+    * "build": Scenario-based coding problem with a test array of [label, regex] to evaluate the student's code in the console without giving away the topic upfront.
+    * "debug": Code with 1-2 intentional bugs (missing syntax or inverted order) and a "fix" dictionary mapping lineIndex -> correctedLine string.
+    * "order": Array of lines in correct order, with "shuffled" 0-based indices to challenge the student to put the lines back in order.
 
 ======================================================================
 2. INPUT METADATA & SOURCE MATERIAL
@@ -421,34 +512,105 @@ END_OF_JSON
     },
     {
       "type": "code",
-      "front": "Object Property Assignment (Object.assign)",
+      "front": "Object Property Assignment & Transformation (Object.assign)",
       "source_slide": 10,
       "code_language": "javascript",
       "syntax_formula": "Object.assign(target, ...sources)",
-      "in_plain_words": "Copies all enumerable own properties from one or more source objects to a target object, returning the mutated target.",
-      "starter": "function cloneUser(user) {\\n  // TODO: return a shallow clone using Object.assign\\n}",
-      "solution": "function cloneUser(user) {\\n  return Object.assign({}, user);\\n}",
-      "output": "{ id: 1, name: 'Alice' }",
+      "in_plain_words": "Copies all enumerable own properties from one or more source objects to a target object, returning the mutated target.\\nContains 3 code variations across OOP key-value pair methods: Object.assign, Object.create, and Object.fromEntries.\\nProblem Scenario: Create a user configuration manager that applies incoming settings over system defaults without mutating the root default object.",
+      "notebook_data": {
+        "in_plain_words": "Copies all enumerable own properties from one or more source objects to a target object, returning the mutated target.\\nContains 3 code variations across OOP key-value pair methods: Object.assign, Object.create, and Object.fromEntries.\\nProblem Scenario: Create a user configuration manager that applies incoming settings over system defaults without mutating the root default object.",
+        "problem_breakdown": {
+          "given": "A default configuration object and incoming user overrides must be combined into a fresh object reference without altering defaults.",
+          "starter": "function mergeConfig(defaults, overrides) {\\n  // TODO: return merged object without mutating defaults\\n}"
+        }
+      },
+      "starter": "function mergeConfig(defaults, overrides) {\\n  // TODO: return merged object without mutating defaults\\n}",
+      "solution": "<!-- HTML Caller Host -->\\n<div id=\\\"app\\\"></div>\\n\\n<!-- Script Implementation -->\\n<script>\\nfunction mergeConfig(defaults, overrides) {\\n  return Object.assign({}, defaults, overrides);\\n}\\n\\nconst defaults = { theme: 'light', notifications: true };\\nconst overrides = { theme: 'dark' };\\nconst merged = mergeConfig(defaults, overrides);\\nconsole.log(JSON.stringify(merged));\\n</script>",
+      "output": "{\\\"theme\\\":\\\"dark\\\",\\\"notifications\\\":true}",
       "code_lab_data": {
-        "in_plain_words": "Copies all enumerable own properties from one or more source objects to a target object, returning the mutated target.",
+        "in_plain_words": "Copies all enumerable own properties from one or more source objects to a target object, returning the mutated target.\\nContains 3 code variations across OOP key-value pair methods: Object.assign, Object.create, and Object.fromEntries.\\nProblem Scenario: Create a user configuration manager that applies incoming settings over system defaults without mutating the root default object.",
         "syntax_formula": "Object.assign(target, ...sources)",
+        "given": "A default configuration object and incoming user overrides must be combined into a fresh object reference without altering defaults.",
+        "script_complete": "<!-- HTML Caller Host -->\\n<div id=\\\"app\\\"></div>\\n\\n<!-- Script Implementation -->\\n<script>\\nfunction mergeConfig(defaults, overrides) {\\n  return Object.assign({}, defaults, overrides);\\n}\\n\\nconst defaults = { theme: 'light', notifications: true };\\nconst overrides = { theme: 'dark' };\\nconst merged = mergeConfig(defaults, overrides);\\nconsole.log(JSON.stringify(merged));\\n</script>",
         "data_map": [
           { "section": "Target", "fn": "target ({})", "concept": "Destination container", "memory_effect": "Allocates fresh heap pointer" },
           { "section": "Sources", "fn": "...sources (user)", "concept": "Keys & primitive values copied", "memory_effect": "Shallow copy only" }
         ],
         "variations": [
           {
+            "title": "Object.assign() Shallow Merge",
+            "use_case": "Standard ES6 shallow copy and rightmost property override",
+            "code": "const clone = Object.assign({}, defaults, overrides);",
+            "explanation": "Copies own enumerable properties from sources into target object in order."
+          },
+          {
+            "title": "Object.create() Prototype Chaining",
+            "use_case": "Inheriting default properties via prototype chain without copying keys",
+            "code": "const childConfig = Object.create(defaults);\\nchildConfig.theme = 'dark';",
+            "explanation": "Creates a new object whose prototype points to defaults, preserving root defaults."
+          },
+          {
+            "title": "Object.fromEntries() Key-Value Mapping",
+            "use_case": "Transforming key-value tuples back into a structured dictionary",
+            "code": "const entries = Object.entries(overrides);\\nconst filtered = Object.fromEntries(entries.filter(([k]) => k !== 'secret'));",
+            "explanation": "Converts an iterable of [key, val] pairs into an object, ideal for filtering configs."
+          },
+          {
             "title": "Spread Syntax Alternative",
             "use_case": "Modern shallow cloning in ES6+",
-            "code": "const clone = { ...user };",
-            "explanation": "Equivalent shallow clone with cleaner syntax."
+            "code": "const clone = { ...defaults, ...overrides };",
+            "explanation": "Syntactic sugar for Object.assign with clean concise syntax."
           }
         ],
+        "codedrill": {
+          "build": {
+            "q": "Create a function that totals a list of prices. If total is over 100, apply a 10% discount. Return or print the amount to pay.",
+            "h": "Compute the sum first, then apply a conditional decision.",
+            "tests": [
+              ["Calculates sum", "\\b(for|reduce|sum|\\+=)\\b"],
+              ["Decides with conditional", "\\bif\\b"],
+              ["Applies 10% discount", "(0\\.9|0\\.1|10\\s*/\\s*100)"],
+              ["Returns or prints result", "\\b(return|console\\.log|print|System\\.out\\.print)\\b"]
+            ]
+          },
+          "debug": {
+            "q": "Fix the syntax errors and missing punctuation.",
+            "h": "One line is missing a block delimiter or colon, another has unclosed parentheses.",
+            "lines": [
+              "function computeTotal(prices) {",
+              "  let total = 0;",
+              "  for (let p of prices",
+              "    total += p;",
+              "  return total;",
+              "}",
+              "console.log(computeTotal([40, 60]"
+            ],
+            "fix": {
+              "2": "  for (let p of prices) {",
+              "6": "console.log(computeTotal([40, 60]));"
+            }
+          },
+          "order": {
+            "q": "Put the lines in order.",
+            "lines": [
+              "function countMatches(items, target) {",
+              "  let count = 0;",
+              "  for (let item of items) {",
+              "    if (item === target) {",
+              "      count += 1;",
+              "    }",
+              "  }",
+              "  return count;",
+              "}"
+            ],
+            "shuffled": [4, 1, 0, 7, 3, 2, 8, 5, 6]
+          }
+        },
         "practice_challenge": {
-          "prompt": "Merge defaults { theme: 'dark', sound: true } with user preferences { sound: false }.",
+          "prompt": "Merge defaults { theme: 'dark', sound: true } with user preferences { sound: false } without mutating defaults.",
           "starterCode": "function mergeConfig(userPref) {\\n  const defaults = { theme: 'dark', sound: true };\\n  // return merged config\\n}",
           "solutionKeywords": ["Object.assign", "defaults", "userPref"],
-          "explanation": "Object.assign({}, defaults, userPref) applies rightmost overrides.",
+          "explanation": "Object.assign({}, defaults, userPref) applies rightmost overrides onto a fresh empty target.",
           "simulatedOutput": "{ theme: 'dark', sound: false }"
         },
         "bug_hunter": {

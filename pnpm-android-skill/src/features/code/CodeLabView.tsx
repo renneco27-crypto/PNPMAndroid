@@ -429,8 +429,26 @@ export function parseCodeChallenges(cards?: Card[]): UnifiedCodeChallenge[] {
         if (codeLabData?.script_html) {
           codeLabData.script_html = formatCodeSnippet(codeLabData.script_html)
         }
+        if (codeLabData?.script_complete) {
+          codeLabData.script_complete = formatCodeSnippet(codeLabData.script_complete)
+        }
         if (codeLabData?.syntax_formula) {
           codeLabData.syntax_formula = formatCodeSnippet(codeLabData.syntax_formula)
+        }
+      } catch {}
+    }
+
+    if (c.notebook_data) {
+      try {
+        const nb = typeof c.notebook_data === 'string' ? JSON.parse(c.notebook_data) : c.notebook_data
+        if (nb) {
+          if (!codeLabData) codeLabData = {}
+          if (!codeLabData.in_plain_words && nb.in_plain_words) {
+            codeLabData.in_plain_words = nb.in_plain_words
+          }
+          if (!codeLabData.given && nb.problem_breakdown?.given) {
+            codeLabData.given = nb.problem_breakdown.given
+          }
         }
       } catch {}
     }
@@ -483,6 +501,128 @@ export function parseCodeChallenges(cards?: Card[]): UnifiedCodeChallenge[] {
   })
 
   return parsed
+}
+
+export interface DrillPackage {
+  topic: string
+  build: {
+    q: string
+    h: string
+    tests: [string, string][]
+  }
+  debug: {
+    q: string
+    h: string
+    lines: string[]
+    fix: Record<number, string>
+  }
+  order: {
+    q: string
+    lines: string[]
+    shuffled: number[]
+  }
+}
+
+export function getDrillData(challenge: UnifiedCodeChallenge): DrillPackage {
+  const cd = challenge?.codeLabData?.codedrill
+  const topic = challenge?.topic || 'Coding Drill'
+
+  // 1. Build Drill
+  const buildQ = cd?.build?.q || challenge?.codeLabData?.given || challenge?.scenario?.scenarioPrompt || `Create a program to solve: ${topic}.`
+  const buildH = cd?.build?.h || challenge?.practiceChallenge?.hint || challenge?.codeLabData?.practice_challenge?.explanation || 'Think about the logic and avoid unnecessary state mutations.'
+  const buildTests: [string, string][] = (cd?.build?.tests && cd.build.tests.length > 0)
+    ? cd.build.tests
+    : (challenge?.scenario?.expectedKeywords && challenge.scenario.expectedKeywords.length > 0)
+      ? challenge.scenario.expectedKeywords.map(kw => [`Uses ${kw}`, kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')])
+      : [['Uses proper syntax', '\\w+']]
+
+  // 2. Debug Drill
+  let debugLines: string[] = []
+  let debugFix: Record<number, string> = {}
+  const debugQ = cd?.debug?.q || challenge?.bugHunter?.scenarioPrompt || 'Fix the syntax errors and missing punctuation.'
+  const debugH = cd?.debug?.h || challenge?.bugHunter?.bugDescriptions?.[0] || 'Check for missing closing tags, semicolons, or colons.'
+
+  if (cd?.debug?.lines && cd.debug.lines.length > 0 && cd.debug.fix) {
+    debugLines = [...cd.debug.lines]
+    for (const [k, v] of Object.entries(cd.debug.fix)) {
+      debugFix[Number(k)] = v
+    }
+  } else if (challenge?.bugHunter) {
+    const buggy = (challenge.bugHunter.buggyCode || '').split('\n').filter(l => l.trim() !== '')
+    const clean = (challenge.bugHunter.cleanSolution || '').split('\n').filter(l => l.trim() !== '')
+    if (buggy.length > 0) {
+      debugLines = [...buggy]
+      for (let i = 0; i < buggy.length; i++) {
+        if (clean[i] !== undefined && buggy[i].trim() !== clean[i].trim()) {
+          debugFix[i] = clean[i]
+        }
+      }
+      if (Object.keys(debugFix).length === 0) {
+        const targetIdx = Math.min(debugLines.length - 1, 1)
+        debugFix[targetIdx] = debugLines[targetIdx]
+        debugLines[targetIdx] = debugLines[targetIdx].replace(/([;:{}()[\]])(?=[^;:{}()[\]]*$)/, '')
+      }
+    }
+  }
+
+  if (debugLines.length === 0) {
+    debugLines = [
+      'function compute(a, b) {',
+      '  if a > b',
+      '    return a;',
+      '  return b;',
+      '}'
+    ]
+    debugFix = { 1: '  if (a > b) {' }
+  }
+
+  // 3. Order Drill
+  let orderLines: string[] = []
+  let orderShuffled: number[] = []
+
+  if (cd?.order?.lines && cd.order.lines.length > 0) {
+    orderLines = [...cd.order.lines]
+    if (cd.order.shuffled && cd.order.shuffled.length === orderLines.length) {
+      orderShuffled = [...cd.order.shuffled]
+    } else {
+      orderShuffled = orderLines.map((_, i) => i)
+      do {
+        orderShuffled.sort(() => Math.random() - 0.5)
+      } while (orderShuffled.every((v, i) => v === i) && orderShuffled.length > 1)
+    }
+  } else {
+    const rawClean = challenge?.scenario?.sampleSolution || challenge?.bugHunter?.cleanSolution || ''
+    const candidateLines = rawClean
+      .split('\n')
+      .map(l => l.trimEnd())
+      .filter(l => l.trim().length > 0 && !l.trim().startsWith('//') && !l.trim().startsWith('<!--'))
+      .slice(0, 7)
+
+    if (candidateLines.length >= 3) {
+      orderLines = candidateLines
+      orderShuffled = orderLines.map((_, i) => i)
+      do {
+        orderShuffled.sort(() => Math.random() - 0.5)
+      } while (orderShuffled.every((v, i) => v === i) && orderShuffled.length > 1)
+    } else {
+      orderLines = [
+        'def find_max(numbers):',
+        '    best = numbers[0]',
+        '    for n in numbers:',
+        '        if n > best:',
+        '            best = n',
+        '    return best'
+      ]
+      orderShuffled = [4, 1, 0, 5, 2, 3]
+    }
+  }
+
+  return {
+    topic,
+    build: { q: buildQ, h: buildH, tests: buildTests },
+    debug: { q: debugQ, h: debugH, lines: debugLines, fix: debugFix },
+    order: { q: cd?.order?.q || 'Put the lines in order.', lines: orderLines, shuffled: orderShuffled }
+  }
 }
 
 export interface TerminalExecutionData {
@@ -929,11 +1069,14 @@ export default function CodeLabView({
   const [currentIndex, setCurrentIndex] = useState(0)
   const [labStyle, setLabStyle] = useState<'notes' | 'exam'>('notes')
   const [mode, setMode] = useState<CodeMode>('scenario')
+  type ExamTab = 'build' | 'debug' | 'order'
+  const [examTab, setExamTab] = useState<ExamTab>('build')
   const [activeTab, setActiveTab] = useState<ViewTab>('notebook')
   const [showSolution, setShowSolution] = useState(false)
   const [isMemoryMapOpen, setIsMemoryMapOpen] = useState(false)
   const [showFormulaDetails, setShowFormulaDetails] = useState(false)
   const [copiedGiven, setCopiedGiven] = useState(false)
+  const [copiedScript, setCopiedScript] = useState(false)
   const { status: ttsStatus, currentItemId: ttsCurrentId, speakSingle, stop: stopTTS } = useTTS()
   const [activeSpeakingCard, setActiveSpeakingCard] = useState<string | null>(null)
   const isScrolled = useScrolledTopSpacing(4)
@@ -953,8 +1096,33 @@ export default function CodeLabView({
   const langKey = currentChallenge?.language || 'java'
   const practice = currentChallenge?.practiceChallenge || currentChallenge?.codeLabData?.practice_challenge
 
+  const [currentDrill, setCurrentDrill] = useState<DrillPackage>(() => getDrillData(currentChallenge))
 
-  
+  // BUILD STATE
+  const [buildCode, setBuildCode] = useState(() => currentChallenge?.scenario?.starterTemplate || '')
+  const [buildDone, setBuildDone] = useState(false)
+  const [buildResults, setBuildResults] = useState<{ label: string; ok: boolean }[] | null>(null)
+  const [showBuildHint, setShowBuildHint] = useState(false)
+  const buildTextareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // DEBUG STATE
+  const [debugLines, setDebugLines] = useState<string[]>(() => getDrillData(currentChallenge).debug.lines)
+  const [debugSel, setDebugSel] = useState<number>(-1)
+  const [debugInput, setDebugInput] = useState('')
+  const [debugRes, setDebugRes] = useState<Record<number, 'ok' | 'bad'>>({})
+  const [debugDone, setDebugDone] = useState(false)
+  const [debugLeft, setDebugLeft] = useState<number | null>(null)
+  const [showDebugHint, setShowDebugHint] = useState(false)
+  const debugInputRef = useRef<HTMLInputElement>(null)
+
+  // ORDER STATE
+  const [orderLines, setOrderLines] = useState<string[]>(() => getDrillData(currentChallenge).order.lines)
+  const [orderShuffled, setOrderShuffled] = useState<number[]>(() => getDrillData(currentChallenge).order.shuffled)
+  const [orderSel, setOrderSel] = useState<number>(-1)
+  const [orderRes, setOrderRes] = useState<Record<number, 'ok' | 'bad'>>({})
+  const [orderDone, setOrderDone] = useState(false)
+  const [orderWrong, setOrderWrong] = useState<number | null>(null)
+
   const modeData = currentChallenge
     ? (mode === 'scenario' 
         ? currentChallenge.scenario 
@@ -981,12 +1149,40 @@ export default function CodeLabView({
     output?: string
   }>({ status: 'idle', message: '' })
 
+  const buzz = () => {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(10)
+    } catch {}
+  }
+
   const handleChallengeChange = (idx: number) => {
     setCurrentIndex(idx)
     setShowSolution(false)
     const next = challenges[idx]
     if (next) {
       setUserCode(mode === 'bug_hunter' ? next.bugHunter.buggyCode : '')
+      const nextDrill = getDrillData(next)
+      setCurrentDrill(nextDrill)
+      // Reset Build
+      setBuildCode(next.scenario?.starterTemplate || '')
+      setBuildDone(false)
+      setBuildResults(null)
+      setShowBuildHint(false)
+      // Reset Debug
+      setDebugLines(nextDrill.debug.lines)
+      setDebugSel(-1)
+      setDebugInput('')
+      setDebugRes({})
+      setDebugDone(false)
+      setDebugLeft(null)
+      setShowDebugHint(false)
+      // Reset Order
+      setOrderLines(nextDrill.order.lines)
+      setOrderShuffled(nextDrill.order.shuffled)
+      setOrderSel(-1)
+      setOrderRes({})
+      setOrderDone(false)
+      setOrderWrong(null)
     }
     setFeedback({ status: 'idle', message: '' })
   }
@@ -998,7 +1194,191 @@ export default function CodeLabView({
     if (!currentChallenge) return
     setUserCode(mode === 'bug_hunter' ? currentChallenge.bugHunter.buggyCode : '')
     setFeedback({ status: 'idle', message: '' })
+    const nextDrill = getDrillData(currentChallenge)
+    setCurrentDrill(nextDrill)
+    setBuildCode(currentChallenge.scenario?.starterTemplate || '')
+    setBuildDone(false)
+    setBuildResults(null)
+    setShowBuildHint(false)
+    setDebugLines(nextDrill.debug.lines)
+    setDebugSel(-1)
+    setDebugInput('')
+    setDebugRes({})
+    setDebugDone(false)
+    setDebugLeft(null)
+    setShowDebugHint(false)
+    setOrderLines(nextDrill.order.lines)
+    setOrderShuffled(nextDrill.order.shuffled)
+    setOrderSel(-1)
+    setOrderRes({})
+    setOrderDone(false)
+    setOrderWrong(null)
   }, [mode, currentChallenge])
+
+  const handleQuickKey = (keyLabel: string) => {
+    buzz()
+    const val = keyLabel === 'Tab' ? '    ' : keyLabel
+    const ta = buildTextareaRef.current
+    if (ta) {
+      const start = ta.selectionStart
+      const end = ta.selectionEnd
+      const next = buildCode.substring(0, start) + val + buildCode.substring(end)
+      setBuildCode(next)
+      setTimeout(() => {
+        ta.focus()
+        ta.setSelectionRange(start + val.length, start + val.length)
+      }, 0)
+    } else {
+      setBuildCode(prev => prev + val)
+    }
+  }
+
+  const handleRunBuild = () => {
+    buzz()
+    if (buildDone) {
+      const nextIdx = (currentIndex + 1) % challenges.length
+      handleChallengeChange(nextIdx)
+      return
+    }
+
+    const tests = currentDrill.build.tests
+    const results = tests.map(([lbl, pattern]) => {
+      try {
+        const regex = new RegExp(pattern, 'i')
+        return { label: lbl, ok: regex.test(buildCode) }
+      } catch {
+        return { label: lbl, ok: buildCode.toLowerCase().includes(pattern.toLowerCase()) }
+      }
+    })
+
+    const passCount = results.filter(r => r.ok).length
+    setBuildResults(results)
+
+    if (passCount === results.length) {
+      setBuildDone(true)
+      confetti({ particleCount: 50, spread: 70, origin: { y: 0.85 } })
+    }
+  }
+
+  const handleSelectDebugLine = (i: number) => {
+    buzz()
+    setDebugSel(i)
+    setDebugInput(debugLines[i] || '')
+    setTimeout(() => {
+      debugInputRef.current?.focus()
+    }, 50)
+  }
+
+  const handleSaveDebug = () => {
+    buzz()
+    if (debugSel < 0) return
+    const next = [...debugLines]
+    next[debugSel] = debugInput
+    setDebugLines(next)
+    setDebugRes(prev => {
+      const copy = { ...prev }
+      delete copy[debugSel]
+      return copy
+    })
+    setDebugSel(-1)
+  }
+
+  const handleCheckDebug = () => {
+    buzz()
+    if (debugDone) {
+      const nextIdx = (currentIndex + 1) % challenges.length
+      handleChallengeChange(nextIdx)
+      return
+    }
+
+    let left = 0
+    const res: Record<number, 'ok' | 'bad'> = {}
+    Object.keys(currentDrill.debug.fix).forEach(kStr => {
+      const k = Number(kStr)
+      const currentText = (debugLines[k] || '').replace(/\s+$/, '')
+      const targetText = (currentDrill.debug.fix[k] || '').replace(/\s+$/, '')
+      if (currentText === targetText) {
+        res[k] = 'ok'
+      } else {
+        res[k] = 'bad'
+        left++
+      }
+    })
+
+    setDebugRes(res)
+    setDebugLeft(left)
+
+    if (left === 0) {
+      setDebugDone(true)
+      confetti({ particleCount: 50, spread: 70, origin: { y: 0.85 } })
+    }
+  }
+
+  const handleMoveOrder = (dir: -1 | 1) => {
+    if (orderSel < 0) return
+    const target = orderSel + dir
+    if (target >= 0 && target < orderShuffled.length) {
+      buzz()
+      const next = [...orderShuffled]
+      const temp = next[orderSel]
+      next[orderSel] = next[target]
+      next[target] = temp
+      setOrderShuffled(next)
+      setOrderSel(target)
+      setOrderRes({})
+    }
+  }
+
+  const handleShuffleOrder = () => {
+    buzz()
+    const next = [...orderShuffled]
+    do {
+      next.sort(() => Math.random() - 0.5)
+    } while (next.every((k, i) => k === i) && next.length > 1)
+    setOrderShuffled(next)
+    setOrderSel(-1)
+    setOrderRes({})
+    setOrderDone(false)
+    setOrderWrong(null)
+  }
+
+  const handleCheckOrder = () => {
+    buzz()
+    if (orderDone) {
+      const nextIdx = (currentIndex + 1) % challenges.length
+      handleChallengeChange(nextIdx)
+      return
+    }
+
+    let wrong = 0
+    const res: Record<number, 'ok' | 'bad'> = {}
+    orderShuffled.forEach((k, i) => {
+      if (k === i) {
+        res[i] = 'ok'
+      } else {
+        res[i] = 'bad'
+        wrong++
+      }
+    })
+
+    setOrderRes(res)
+    setOrderWrong(wrong)
+
+    if (wrong === 0) {
+      setOrderDone(true)
+      confetti({ particleCount: 50, spread: 70, origin: { y: 0.85 } })
+    }
+  }
+
+  const handleCopyScript = () => {
+    const script = currentChallenge?.codeLabData?.script_complete || currentChallenge?.codeLabData?.script_html || currentChallenge?.scenario?.sampleSolution || ''
+    if (script && typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(script).then(() => {
+        setCopiedScript(true)
+        setTimeout(() => setCopiedScript(false), 2000)
+      })
+    }
+  }
 
   const handleRun = () => {
     if (!currentChallenge) return
@@ -1729,6 +2109,313 @@ export default function CodeLabView({
           color: var(--green);
           font-weight: 700;
         }
+
+        /* CODEDRILL ANTI-SLOP ENGINE (codedrill v2) */
+        .cd-app {
+          width: 100%;
+          max-width: 580px;
+          margin: 0 auto 24px;
+          display: flex;
+          flex-direction: column;
+        }
+        .cd-seg {
+          position: relative;
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          border: 1px solid var(--line);
+          border-bottom: 1px solid var(--line);
+          background: var(--card);
+          border-radius: 14px 14px 0 0;
+          overflow: hidden;
+        }
+        .cd-seg button {
+          height: 44px;
+          font-weight: 700;
+          font-size: 14px;
+          color: var(--muted);
+          background: none;
+          border: 0;
+          cursor: pointer;
+          transition: color .15s ease;
+        }
+        .cd-seg button[aria-selected=true] {
+          color: var(--text);
+        }
+        .cd-seg i {
+          position: absolute;
+          left: 0;
+          bottom: 0;
+          width: 33.333%;
+          height: 2px;
+          background: #0B6BFF;
+          transition: transform .25s cubic-bezier(.3,.7,.2,1);
+        }
+        .cd-view {
+          flex: 1;
+          min-height: 0;
+          display: flex;
+          flex-direction: column;
+          border: 1px solid var(--line);
+          border-top: 0;
+          border-radius: 0 0 14px 14px;
+          overflow: hidden;
+          background: var(--card);
+          animation: cdbi .25s ease both;
+        }
+        @keyframes cdbi {
+          from { opacity: 0; filter: blur(4px); }
+          to { opacity: 1; filter: blur(0); }
+        }
+        .cd-code {
+          flex: 1;
+          min-height: 220px;
+          max-height: 380px;
+          overflow-y: auto;
+          overflow-x: hidden;
+          background: #0F1217;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+          font-size: 13px;
+          line-height: 1.65;
+          -webkit-mask-image: linear-gradient(transparent, #000 10px, #000 calc(100% - 15px), transparent);
+          mask-image: linear-gradient(transparent, #000 10px, #000 calc(100% - 15px), transparent);
+        }
+        .cd-ed {
+          display: flex;
+          min-height: 100%;
+        }
+        .cd-gut {
+          flex: none;
+          width: 38px;
+          padding: 10px 8px 10px 0;
+          text-align: right;
+          color: #9AA2B1;
+          white-space: pre;
+          user-select: none;
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 13px;
+          line-height: 1.65;
+          border-right: 1px solid #1a1e26;
+        }
+        .cd-ta {
+          flex: 1;
+          width: 100%;
+          min-height: 200px;
+          resize: none;
+          border: 0;
+          background: transparent;
+          color: #E6E9EF;
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 13px;
+          line-height: 1.65;
+          padding: 10px 12px;
+          white-space: pre;
+          overflow: auto;
+          caret-color: #0B6BFF;
+          outline: none;
+        }
+        .cd-keys {
+          display: flex;
+          gap: 6px;
+          overflow-x: auto;
+          padding: 8px 12px;
+          border-top: 1px solid var(--line);
+          background: var(--card2);
+          scrollbar-width: none;
+        }
+        .cd-keys::-webkit-scrollbar {
+          display: none;
+        }
+        .cd-keys button {
+          flex: none;
+          min-width: 40px;
+          height: 40px;
+          border-radius: 8px;
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 15px;
+          color: var(--text);
+          background: var(--card);
+          border: 1px solid var(--line);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          transition: background .1s, transform .05s;
+        }
+        .cd-keys button:active {
+          background: var(--line);
+          transform: scale(0.95);
+        }
+        .cd-out {
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 12.5px;
+          padding: 10px 16px;
+          border-top: 1px solid var(--line);
+          background: var(--card2);
+          min-height: 44px;
+          color: var(--muted);
+          max-height: 120px;
+          overflow-y: auto;
+        }
+        .cd-p { color: #4ADE9A; }
+        .cd-f { color: #FF7A72; }
+        .cd-t { color: var(--text); margin-top: 4px; font-weight: 700; font-size: 13px; }
+        .cd-sheet {
+          background: var(--card);
+          border-top: 1px solid var(--line);
+          padding: 14px 16px;
+        }
+        .cd-meta {
+          display: flex;
+          justify-content: space-between;
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 12px;
+          color: var(--muted);
+          margin-bottom: 6px;
+        }
+        .cd-q {
+          font-size: 16px;
+          line-height: 1.35;
+          font-weight: 800;
+          letter-spacing: -0.015em;
+          margin: 0 0 14px;
+          color: var(--text);
+        }
+        .cd-row {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+        }
+        .cd-ghost {
+          height: 46px;
+          padding: 0 16px;
+          font-weight: 700;
+          font-size: 14px;
+          color: var(--muted);
+          border-radius: 12px;
+          border: 1px solid var(--line);
+          background: var(--card2);
+          cursor: pointer;
+          transition: background .1s;
+        }
+        .cd-ghost:active {
+          background: var(--line);
+        }
+        .cd-btn {
+          flex: 1;
+          height: 46px;
+          border-radius: 14px;
+          font-weight: 800;
+          font-size: 15px;
+          background: #0B6BFF;
+          color: #fff;
+          border: 0;
+          cursor: pointer;
+          box-shadow: 0 3px 0 #0850C4;
+          transition: transform .08s, box-shadow .08s;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+        }
+        .cd-btn:active {
+          transform: translateY(3px);
+          box-shadow: 0 0 0 #0850C4;
+        }
+        .cd-hint {
+          margin-top: 10px;
+          font-size: 13px;
+          color: var(--muted);
+          padding: 8px 12px;
+          background: var(--card2);
+          border-radius: 8px;
+          border: 1px dashed var(--line);
+        }
+        .cd-l {
+          display: flex;
+          min-height: 40px;
+          align-items: stretch;
+          border-bottom: 1px solid #1a1e26;
+        }
+        .cd-l > i {
+          flex: none;
+          width: 38px;
+          text-align: right;
+          padding: 8px 8px 0 0;
+          color: #9AA2B1;
+          font-style: normal;
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 12px;
+          user-select: none;
+        }
+        .cd-l > button {
+          flex: 1;
+          text-align: left;
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 13px;
+          white-space: pre;
+          padding: 8px 8px;
+          overflow-x: auto;
+          background: none;
+          border: 0;
+          color: #E6E9EF;
+          cursor: pointer;
+        }
+        .cd-l.sel {
+          background: #0B6BFF !important;
+        }
+        .cd-l.sel > button, .cd-l.sel > i {
+          color: #fff !important;
+        }
+        .cd-l.bad {
+          background: rgba(255, 122, 114, 0.18);
+        }
+        .cd-l.ok {
+          background: rgba(74, 222, 154, 0.18);
+        }
+        .cd-edit {
+          display: flex;
+          padding: 8px 12px;
+          border-top: 1px solid var(--line);
+          background: var(--card2);
+          gap: 8px;
+        }
+        .cd-edit input {
+          flex: 1;
+          height: 42px;
+          border-radius: 10px;
+          border: 1px solid var(--line);
+          background: #0F1217;
+          color: #E6E9EF;
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 13px;
+          padding: 0 12px;
+          outline: none;
+        }
+        .cd-edit input:focus {
+          border-color: #0B6BFF;
+        }
+        .cd-edit .cd-ghost {
+          height: 42px;
+          color: #0B6BFF;
+          border-color: #0B6BFF;
+        }
+        .cd-mv {
+          flex: none;
+          display: flex;
+        }
+        .cd-mv button {
+          width: 38px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #fff;
+          background: #0003;
+          border: 0;
+          cursor: pointer;
+        }
+        .cd-mv button:active {
+          background: #0006;
+        }
       `}</style>
 
       <main>
@@ -1839,107 +2526,158 @@ export default function CodeLabView({
         {labStyle === 'notes' && (
           <>
             {/* 1. IN PLAIN WORDS CARD */}
-            {(currentChallenge.codeLabData?.in_plain_words || currentChallenge.description) && (
-              <section className="card">
-                <div className="head">
-                  <h2>In plain words</h2>
-                  <button
-                    onClick={() => {
-                      if (activeSpeakingCard === 'in_plain_words') {
-                        stopTTS()
-                        setActiveSpeakingCard(null)
-                      } else {
-                        setActiveSpeakingCard('in_plain_words')
-                        speakSingle(currentChallenge.codeLabData?.in_plain_words || currentChallenge.description)
-                      }
-                    }}
-                    className="btn text-xs"
-                    title="Read intuition"
-                  >
-                    {activeSpeakingCard === 'in_plain_words' ? <VolumeX size={15} /> : <Volume2 size={15} />}
-                    <span>{activeSpeakingCard === 'in_plain_words' ? 'Stop' : 'Listen'}</span>
-                  </button>
-                </div>
-                <p className="leading-relaxed">
-                  <MathFormattedText text={currentChallenge.codeLabData?.in_plain_words || currentChallenge.description || ''} />
-                </p>
-              </section>
-            )}
+            {(() => {
+              const rawWords = currentChallenge.codeLabData?.in_plain_words || currentChallenge.description || ''
+              const lines = rawWords.split('\n').map(l => l.trim()).filter(Boolean)
+              return (
+                <section className="card">
+                  <div className="head">
+                    <h2>In plain words</h2>
+                    <button
+                      onClick={() => {
+                        if (activeSpeakingCard === 'in_plain_words') {
+                          stopTTS()
+                          setActiveSpeakingCard(null)
+                        } else {
+                          setActiveSpeakingCard('in_plain_words')
+                          speakSingle(rawWords)
+                        }
+                      }}
+                      className="btn text-xs"
+                      title="Read intuition"
+                    >
+                      {activeSpeakingCard === 'in_plain_words' ? <VolumeX size={15} /> : <Volume2 size={15} />}
+                      <span>{activeSpeakingCard === 'in_plain_words' ? 'Stop' : 'Listen'}</span>
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {lines.map((paragraph, pIdx) => {
+                      const isProblem = paragraph.toLowerCase().startsWith('problem scenario:')
+                      return (
+                        <p
+                          key={pIdx}
+                          className={`leading-relaxed ${
+                            isProblem
+                              ? 'p-2.5 rounded-lg bg-[var(--hero)] border border-[var(--green)]/30 text-emerald-200 text-xs sm:text-sm font-medium'
+                              : 'text-sm text-[var(--text)]'
+                          }`}
+                        >
+                          <MathFormattedText text={paragraph} />
+                        </p>
+                      )
+                    })}
+                  </div>
+                </section>
+              )
+            })()}
 
-            {/* 2. GIVEN CARD */}
-            {suiteDisplay && (
-              <section className="card">
-                <div className="head">
-                  <h2>Given</h2>
-                  <button className="btn" onClick={handleCopyGiven} aria-label="Copy given suite">
-                    <Copy size={16} />
-                    <span>{copiedGiven ? 'Copied' : ''}</span>
-                  </button>
-                </div>
-                <div className="eqbox text-xs">
-                  <code>{suiteDisplay}</code>
-                </div>
-              </section>
-            )}
+            {/* 2. GIVEN & PROBLEM SCENARIO CARD */}
+            {(() => {
+              const givenText = currentChallenge.codeLabData?.given || currentChallenge.scenario?.scenarioPrompt || ''
+              if (!givenText) return null
+              return (
+                <section className="card">
+                  <div className="head">
+                    <div>
+                      <p className="lab">Problem to Solve</p>
+                      <h2>Given Scenario</h2>
+                    </div>
+                    <button className="btn text-xs" onClick={handleCopyGiven} aria-label="Copy given scenario">
+                      <Copy size={16} />
+                      <span>{copiedGiven ? 'Copied' : ''}</span>
+                    </button>
+                  </div>
+                  <div className="p-3 rounded-xl bg-[var(--card2)] border border-[var(--line)] text-sm leading-relaxed text-[var(--text)]">
+                    <MathFormattedText text={givenText} />
+                  </div>
+                </section>
+              )
+            })()}
 
-            {/* 3. FORMULA / STARTER CODE CARD */}
+            {/* 3. STARTER & SYNTAX BLUEPRINT CARD */}
             <section className="card">
               <div className="head">
-                <h2>Starter &amp; Syntax</h2>
-                <button className="btn" onClick={() => setShowFormulaDetails(!showFormulaDetails)}>
-                  <span>See details</span>
-                  <ChevronRight size={16} className={`transition-transform ${showFormulaDetails ? 'rotate-90' : ''}`} />
-                </button>
-              </div>
-              <div className="frm">
-                <div style={{ flex: '1 1 100%' }}>
-                  <p className="lab">Template Blueprint</p>
-                  <div className="eqbox text-xs">
-                    <code>{formatCodeSnippet(currentChallenge.scenario?.starterTemplate || currentChallenge.scenario?.sampleSolution || '')}</code>
-                  </div>
+                <div>
+                  <p className="lab">Syntax Blueprint &amp; Starter</p>
+                  <h2>Starter Template</h2>
                 </div>
               </div>
-              <p className={`note ${showFormulaDetails ? 'on' : ''}`}>
-                Analyze signature types, parameter definitions, and memory lifecycle constraints before executing test scenarios.
-              </p>
-            </section>
-
-            {/* 4. STEP-BY-STEP SOLUTION / LOGIC BREAKDOWN */}
-            <section className="card">
-              <h2 style={{ marginBottom: '14px' }}>Step-by-step solution</h2>
-              
-              <div className="step">
-                <div className="num">1</div>
-                <div>
-                  <p className="t">Method signature and input parameters</p>
+              {syntaxBlueprint && (
+                <div className="mb-2.5">
+                  <p className="lab">Master Pattern</p>
                   <div className="eqbox text-xs">
-                    <code>{formatCodeSnippet(currentChallenge.scenario?.starterTemplate || '')}</code>
+                    <code>{syntaxBlueprint}</code>
                   </div>
                 </div>
-              </div>
-
-              <div className="step">
-                <div className="num">2</div>
-                <div>
-                  <p className="t">Algorithmic implementation</p>
-                  <div className="eqbox text-xs">
-                    <code>{formatCodeSnippet(currentChallenge.scenario?.sampleSolution || '')}</code>
-                  </div>
-                </div>
-              </div>
-
-              <div className="step">
-                <div className="num">3</div>
-                <div>
-                  <p className="t">Execution verification and return</p>
-                  <div className="eqbox text-xs">
-                    <code>{finalExpected}</code>
-                  </div>
+              )}
+              <div>
+                <p className="lab">Starter Skeleton</p>
+                <div className="eqbox text-xs">
+                  <code>{formatCodeSnippet(currentChallenge.scenario?.starterTemplate || '')}</code>
                 </div>
               </div>
             </section>
 
-            {/* 5. FINAL EXPECTED OUTPUT BANNER */}
+            {/* 4. COMPLETE EXECUTABLE SCRIPT */}
+            {(() => {
+              const script = currentChallenge.codeLabData?.script_complete || currentChallenge.codeLabData?.script_html || currentChallenge.scenario?.sampleSolution || ''
+              if (!script) return null
+              return (
+                <section className="card">
+                  <div className="head">
+                    <div>
+                      <p className="lab">Complete Executable Script</p>
+                      <h2>Runnable Implementation</h2>
+                    </div>
+                    <button className="btn text-xs" onClick={handleCopyScript} aria-label="Copy script">
+                      {copiedScript ? <Check size={16} /> : <Copy size={16} />}
+                      <span>{copiedScript ? 'Copied' : 'Copy'}</span>
+                    </button>
+                  </div>
+                  <div className="eqbox text-xs sm:text-sm">
+                    <pre className="whitespace-pre overflow-x-auto font-mono">
+                      <code>{formatCodeSnippet(script)}</code>
+                    </pre>
+                  </div>
+                </section>
+              )
+            })()}
+
+            {/* 5. CODE VARIATIONS CARD */}
+            {(() => {
+              const vars = currentChallenge.codeLabData?.variations || []
+              if (vars.length === 0) return null
+              return (
+                <section className="card">
+                  <div className="head">
+                    <div>
+                      <p className="lab">Design Patterns &amp; Scenarios</p>
+                      <h2>Code Variations ({vars.length})</h2>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {vars.map((v, i) => (
+                      <div key={i} className="p-3 rounded-xl bg-[var(--card2)] border border-[var(--line)]">
+                        <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
+                          <span className="font-bold text-sm text-[var(--text)]">{v.title}</span>
+                          {v.use_case && (
+                            <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-[var(--line)] text-[var(--muted)]">{v.use_case}</span>
+                          )}
+                        </div>
+                        <div className="eqbox text-xs my-2">
+                          <code>{formatCodeSnippet(v.code)}</code>
+                        </div>
+                        {v.explanation && (
+                          <p className="text-xs text-[var(--muted)] leading-relaxed mt-1">{v.explanation}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )
+            })()}
+
+            {/* 6. FINAL EXPECTED OUTPUT BANNER */}
             <section className="final">
               <div>
                 <small>Expected Output</small>
@@ -1950,7 +2688,7 @@ export default function CodeLabView({
               </div>
             </section>
 
-            {/* 6. BIG IDEA CARD */}
+            {/* 7. BIG IDEA CARD */}
             <section className="card big">
               <h2 style={{ marginBottom: '8px' }}>Big idea</h2>
               <p className="leading-relaxed">
@@ -1964,7 +2702,7 @@ export default function CodeLabView({
               </p>
             </section>
 
-            {/* 7. PARAMETERS AND TYPES CARD */}
+            {/* 8. PARAMETERS AND TYPES CARD */}
             {dataMap.length > 0 && (
               <section className="card">
                 <h2 style={{ marginBottom: '6px' }}>Parameters and Types</h2>
@@ -1986,169 +2724,345 @@ export default function CodeLabView({
           </>
         )}
 
-        {/* ===================== EXAM STYLE ===================== */}
+        {/* ===================== EXAM STYLE (CODEDRILL ANTI-SLOP) ===================== */}
         {labStyle === 'exam' && (
-          <>
-            <section className="card">
-              <div className="head">
-                <h2>Interactive IDE &amp; Runner</h2>
-                <div className="flex items-center gap-1 bg-[var(--card2)] p-0.5 rounded-lg text-xs">
-                  <button
-                    onClick={() => setMode('scenario')}
-                    className={`px-2.5 py-1 rounded cursor-pointer transition-colors ${
-                      mode === 'scenario' ? 'bg-[var(--green)] text-black font-bold' : 'text-[var(--muted)] hover:text-[var(--text)]'
-                    }`}
-                  >
-                    Build
-                  </button>
-                  <button
-                    onClick={() => setMode('bug_hunter')}
-                    className={`px-2.5 py-1 rounded cursor-pointer transition-colors ${
-                      mode === 'bug_hunter' ? 'bg-[var(--green)] text-black font-bold' : 'text-[var(--muted)] hover:text-[var(--text)]'
-                    }`}
-                  >
-                    Bug Hunter
-                  </button>
-                  {practice && (
+          <div className="cd-app">
+            {/* Segmented Tabs (Build, Debug, Reorder) */}
+            <div className="cd-seg" role="tablist">
+              <button
+                role="tab"
+                aria-selected={examTab === 'build'}
+                onClick={() => { buzz(); setExamTab('build'); }}
+              >
+                Build
+              </button>
+              <button
+                role="tab"
+                aria-selected={examTab === 'debug'}
+                onClick={() => { buzz(); setExamTab('debug'); }}
+              >
+                Debug
+              </button>
+              <button
+                role="tab"
+                aria-selected={examTab === 'order'}
+                onClick={() => { buzz(); setExamTab('order'); }}
+              >
+                Reorder
+              </button>
+              <i style={{ transform: `translateX(${['build', 'debug', 'order'].indexOf(examTab) * 100}%)` }} />
+            </div>
+
+            {/* TAB 1: BUILD */}
+            {examTab === 'build' && (
+              <section className="cd-view">
+                <div className="cd-code">
+                  <div className="cd-ed">
+                    <div className="cd-gut">
+                      {Array.from({ length: Math.max(1, buildCode.split('\n').length) }, (_, i) => i + 1).join('\n')}
+                    </div>
+                    <textarea
+                      ref={buildTextareaRef}
+                      value={buildCode}
+                      onChange={(e) => {
+                        setBuildCode(e.target.value)
+                        setBuildResults(null)
+                        setBuildDone(false)
+                      }}
+                      spellCheck={false}
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      aria-label="Code Editor"
+                      className="cd-ta"
+                      placeholder="// Enter program logic here..."
+                    />
+                  </div>
+                </div>
+
+                {/* Quick Keys Toolbar */}
+                <div className="cd-keys">
+                  {[
+                    ['Tab', <svg key="tab" viewBox="0 0 24 24" className="w-4 h-4 stroke-2 stroke-current fill-none shrink-0"><path d="M4 12h14M13 7l5 5-5 5M20 5v14" /></svg>],
+                    ['(', '('],
+                    [')', ')'],
+                    ['[', '['],
+                    [']', ']'],
+                    ['{', '{'],
+                    ['}', '}'],
+                    [':', ':'],
+                    ['"', '"'],
+                    ['=', '='],
+                    ['+', '+'],
+                    ['*', '*'],
+                    ['%', '%'],
+                    ['>', '>'],
+                    ['#', '#'],
+                    ['_', '_'],
+                  ].map(([kLabel, icon]) => (
                     <button
-                      onClick={() => setMode('practice')}
-                      className={`px-2.5 py-1 rounded cursor-pointer transition-colors ${
-                        mode === 'practice' ? 'bg-[var(--green)] text-black font-bold' : 'text-[var(--muted)] hover:text-[var(--text)]'
-                      }`}
+                      key={String(kLabel)}
+                      type="button"
+                      aria-label={String(kLabel)}
+                      onClick={() => handleQuickKey(String(kLabel))}
                     >
-                      Practice
+                      {icon}
                     </button>
+                  ))}
+                </div>
+
+                {/* Console Output */}
+                <div className="cd-out">
+                  {buildResults === null ? (
+                    <span>Run to check.</span>
+                  ) : (
+                    <div className="space-y-1">
+                      {buildResults.map((r, i) => (
+                        <div key={i} className={`flex items-center gap-2 ${r.ok ? 'cd-p' : 'cd-f'}`}>
+                          {r.ok ? (
+                            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 stroke-[2.5] stroke-current fill-none shrink-0">
+                              <path d="M5 12l5 5 9-10" />
+                            </svg>
+                          ) : (
+                            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 stroke-[2.5] stroke-current fill-none shrink-0">
+                              <path d="M6 6l12 12M18 6L6 18" />
+                            </svg>
+                          )}
+                          <span>{r.label}</span>
+                        </div>
+                      ))}
+                      {buildDone && (
+                        <div className="cd-t">Topic: {currentChallenge.topic}</div>
+                      )}
+                    </div>
                   )}
                 </div>
-              </div>
 
-              {/* Objective Statement */}
-              <div className="mb-3">
-                <p className="lab">
-                  {mode === 'scenario' ? 'Objective' : mode === 'bug_hunter' ? 'Debug Objective' : 'Practice Objective'}
-                </p>
-                <p className="text-sm text-neutral-300">
-                  <MathFormattedText text={modeData?.scenarioPrompt || ''} />
-                </p>
-              </div>
-
-              {/* Solution toggle */}
-              {showSolution && modeData && (
-                <div className="mb-3 eqbox text-xs text-[#2fd16a] border border-[#2fd16a]/30">
-                  <p className="lab text-[#2fd16a]">Reference Solution</p>
-                  <code>
-                    {mode === 'scenario'
-                      ? currentChallenge.scenario.sampleSolution
-                      : mode === 'bug_hunter'
-                      ? currentChallenge.bugHunter.cleanSolution
-                      : (practice?.hint || practice?.starterCode || '')}
-                  </code>
-                </div>
-              )}
-
-              {/* Code Editor Container */}
-              <div className="rounded-xl border border-[var(--line)] overflow-hidden bg-[var(--card2)] mb-3">
-                <div className="bg-[var(--card)] px-3 py-1.5 border-b border-[var(--line)] flex items-center justify-between text-xs font-mono text-[var(--muted)]">
-                  <span>Main.{ext}</span>
-                  <span>{lines.length} lines</span>
-                </div>
-
-                <div className="flex bg-[var(--card2)] min-h-[300px]">
-                  <div
-                    ref={lineNumbersRef}
-                    className="select-none text-[var(--muted)] text-right py-3 px-2 border-r border-[var(--line)] font-mono text-xs leading-5 shrink-0 min-w-[36px]"
-                  >
-                    {lines.map((_, i) => (
-                      <div key={i}>{i + 1}</div>
-                    ))}
+                {/* Bottom Sheet */}
+                <div className="cd-sheet">
+                  <div className="cd-meta">
+                    <span>{currentIndex + 1} / {challenges.length}</span>
+                    <span>{buildDone ? currentChallenge.topic : 'Topic hidden'}</span>
                   </div>
-
-                  <textarea
-                    ref={textareaRef}
-                    value={userCode}
-                    onChange={(e) => {
-                      setUserCode(e.target.value)
-                      setFeedback({ status: 'idle', message: '' })
-                    }}
-                    onScroll={(e) => {
-                      if (lineNumbersRef.current) {
-                        lineNumbersRef.current.scrollTop = e.currentTarget.scrollTop
-                      }
-                    }}
-                    onKeyDown={handleKeyDown}
-                    spellCheck={false}
-                    autoCapitalize="off"
-                    autoComplete="off"
-                    autoCorrect="off"
-                    className="flex-1 w-full min-h-[300px] p-3 font-mono text-xs sm:text-sm leading-5 text-[var(--text)] bg-transparent outline-none resize-y whitespace-pre"
-                    placeholder="// Enter code here..."
-                  />
-                </div>
-
-                {/* Actions Bar */}
-                <div className="p-2 border-t border-[var(--line)] bg-[var(--card)] flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
+                  <p className="cd-q">{currentDrill.build.q}</p>
+                  <div className="cd-row">
                     <button
-                      onClick={() => setShowSolution(!showSolution)}
-                      className="px-2.5 py-1 rounded-lg border border-[var(--line)] hover:bg-[var(--card2)] text-xs text-[var(--muted)] hover:text-[var(--text)] cursor-pointer"
+                      type="button"
+                      className="cd-ghost"
+                      onClick={() => { buzz(); setShowBuildHint(!showBuildHint); }}
                     >
-                      {showSolution ? 'Hide Solution' : 'View Solution'}
+                      Hint
                     </button>
                     <button
-                      onClick={handleReset}
-                      className="px-2.5 py-1 rounded-lg border border-[var(--line)] hover:bg-[var(--card2)] text-xs text-[var(--muted)] hover:text-[var(--text)] cursor-pointer"
+                      type="button"
+                      className="cd-btn"
+                      onClick={handleRunBuild}
                     >
-                      Reset
+                      {buildDone ? 'Next' : 'Run'}
                     </button>
                   </div>
-
-                  <button
-                    onClick={handleRun}
-                    className="px-4 py-1.5 rounded-lg bg-[var(--green)] text-black font-bold text-xs flex items-center gap-1.5 hover:opacity-90 active:scale-95 transition-all cursor-pointer"
-                  >
-                    <Play size={13} fill="currentColor" />
-                    <span>Run Code</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Output Console Embedded */}
-              <div className="eqbox text-xs max-h-44 overflow-y-auto">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="flex items-center gap-1 text-[var(--muted)] font-bold uppercase text-[10px]">
-                    <Terminal size={12} />
-                    <span>Console Output</span>
-                  </span>
-                  {feedback.status !== 'idle' && (
-                    <span className={`font-semibold flex items-center gap-1 ${
-                      feedback.status === 'success' ? 'text-[var(--green)]' : 'text-rose-400'
-                    }`}>
-                      {feedback.status === 'success' ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
-                      {feedback.message}
-                    </span>
+                  {showBuildHint && (
+                    <div className="cd-hint">{currentDrill.build.h}</div>
                   )}
                 </div>
-                {feedback.output ? (
-                  <pre className="whitespace-pre-wrap leading-relaxed text-[var(--text)]">
-                    <code>{feedback.output}</code>
-                  </pre>
-                ) : (
-                  <p className="text-[var(--muted)] italic text-xs">Click Run Code to verify execution output.</p>
+              </section>
+            )}
+
+            {/* TAB 2: DEBUG */}
+            {examTab === 'debug' && (
+              <section className="cd-view">
+                <div className="cd-code">
+                  {debugLines.map((l, i) => (
+                    <div
+                      key={i}
+                      className={`cd-l ${debugRes[i] || ''} ${debugSel === i ? 'sel' : ''}`}
+                    >
+                      <i>{i + 1}</i>
+                      <button
+                        type="button"
+                        onClick={() => handleSelectDebugLine(i)}
+                      >
+                        {l || ' '}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Inline Edit Bar */}
+                {debugSel >= 0 && (
+                  <div className="cd-edit">
+                    <input
+                      ref={debugInputRef}
+                      value={debugInput}
+                      onChange={(e) => setDebugInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveDebug()
+                      }}
+                      spellCheck={false}
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      aria-label="Edit line"
+                    />
+                    <button
+                      type="button"
+                      className="cd-ghost"
+                      onClick={handleSaveDebug}
+                    >
+                      Save
+                    </button>
+                  </div>
                 )}
-              </div>
-            </section>
 
-            {/* Expected Output Banner */}
-            <section className="final">
-              <div>
-                <small>Expected Output</small>
-                <div className="v">{finalExpected}</div>
-              </div>
-              <div className="chk">
-                <Check size={24} />
-              </div>
-            </section>
-          </>
+                {/* Console Output */}
+                <div className="cd-out">
+                  {debugDone ? (
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 cd-p">
+                        <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 stroke-[2.5] stroke-current fill-none shrink-0">
+                          <path d="M5 12l5 5 9-10" />
+                        </svg>
+                        <span>All fixed</span>
+                      </div>
+                      <div className="cd-t">Topic: {currentChallenge.topic}</div>
+                    </div>
+                  ) : debugLeft === null ? (
+                    <span>Tap a line to edit.</span>
+                  ) : debugLeft > 0 ? (
+                    <div className="flex items-center gap-2 cd-f">
+                      <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 stroke-[2.5] stroke-current fill-none shrink-0">
+                        <path d="M6 6l12 12M18 6L6 18" />
+                      </svg>
+                      <span>{debugLeft} still wrong</span>
+                    </div>
+                  ) : (
+                    <span>Tap a line to edit.</span>
+                  )}
+                </div>
+
+                {/* Bottom Sheet */}
+                <div className="cd-sheet">
+                  <div className="cd-meta">
+                    <span>{currentIndex + 1} / {challenges.length}</span>
+                    <span>{debugLeft !== null ? `${debugLeft} left` : `${Object.keys(currentDrill.debug.fix).length} to fix`}</span>
+                  </div>
+                  <p className="cd-q">{currentDrill.debug.q}</p>
+                  <div className="cd-row">
+                    <button
+                      type="button"
+                      className="cd-ghost"
+                      onClick={() => { buzz(); setShowDebugHint(!showDebugHint); }}
+                    >
+                      Hint
+                    </button>
+                    <button
+                      type="button"
+                      className="cd-btn"
+                      onClick={handleCheckDebug}
+                    >
+                      {debugDone ? 'Next' : 'Check'}
+                    </button>
+                  </div>
+                  {showDebugHint && (
+                    <div className="cd-hint">{currentDrill.debug.h}</div>
+                  )}
+                </div>
+              </section>
+            )}
+
+            {/* TAB 3: REORDER */}
+            {examTab === 'order' && (
+              <section className="cd-view">
+                <div className="cd-code">
+                  {orderShuffled.map((lineIdx, i) => (
+                    <div
+                      key={i}
+                      className={`cd-l ${orderRes[i] || ''} ${orderSel === i ? 'sel' : ''}`}
+                    >
+                      <i>{i + 1}</i>
+                      <button
+                        type="button"
+                        onClick={() => { buzz(); setOrderSel(i); }}
+                      >
+                        {orderLines[lineIdx]}
+                      </button>
+                      {orderSel === i && (
+                        <span className="cd-mv">
+                          <button
+                            type="button"
+                            aria-label="Move up"
+                            onClick={() => handleMoveOrder(-1)}
+                          >
+                            <svg viewBox="0 0 24 24" className="w-4 h-4 stroke-2 stroke-current fill-none shrink-0">
+                              <path d="M6 15l6-6 6 6" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="Move down"
+                            onClick={() => handleMoveOrder(1)}
+                          >
+                            <svg viewBox="0 0 24 24" className="w-4 h-4 stroke-2 stroke-current fill-none shrink-0">
+                              <path d="M6 9l6 6 6-6" />
+                            </svg>
+                          </button>
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Console Output */}
+                <div className="cd-out">
+                  {orderDone ? (
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 cd-p">
+                        <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 stroke-[2.5] stroke-current fill-none shrink-0">
+                          <path d="M5 12l5 5 9-10" />
+                        </svg>
+                        <span>Correct</span>
+                      </div>
+                      <div className="cd-t">Topic: {currentChallenge.topic}</div>
+                    </div>
+                  ) : orderWrong === null ? (
+                    <span>Tap a line, then move it.</span>
+                  ) : orderWrong > 0 ? (
+                    <div className="flex items-center gap-2 cd-f">
+                      <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 stroke-[2.5] stroke-current fill-none shrink-0">
+                        <path d="M6 6l12 12M18 6L6 18" />
+                      </svg>
+                      <span>{orderWrong} out of place</span>
+                    </div>
+                  ) : (
+                    <span>Tap a line, then move it.</span>
+                  )}
+                </div>
+
+                {/* Bottom Sheet */}
+                <div className="cd-sheet">
+                  <div className="cd-meta">
+                    <span>{currentIndex + 1} / {challenges.length}</span>
+                    <span>{orderDone ? currentChallenge.topic : 'Topic hidden'}</span>
+                  </div>
+                  <p className="cd-q">{currentDrill.order.q || 'Put the lines in order.'}</p>
+                  <div className="cd-row">
+                    <button
+                      type="button"
+                      className="cd-ghost"
+                      onClick={handleShuffleOrder}
+                    >
+                      Shuffle
+                    </button>
+                    <button
+                      type="button"
+                      className="cd-btn"
+                      onClick={handleCheckOrder}
+                    >
+                      {orderDone ? 'Next' : 'Check'}
+                    </button>
+                  </div>
+                </div>
+              </section>
+            )}
+          </div>
         )}
       </main>
 
