@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Play, RotateCcw, Copy, Check, ChevronRight } from 'lucide-react'
+import { Play, RotateCcw, Copy, Check, ChevronRight, Ruler } from 'lucide-react'
 
 // Bug 4/5 fix: only treat text as LaTeX when it contains an actual LaTeX command.
 // Previously /\\[a-zA-Z]+/ matched "any backslash + letters", so a stray literal \n
@@ -104,6 +104,10 @@ export function replaceMathSymbols(text: any): string {
     return MATH_SYMBOL_MAP[token] || match
   })
 
+  // Normalize {\infty} or \infty into clean symbol ∞
+  result = result.replace(/\\?\{\s*\\?(?:inft?y|infinity)\s*\\?\}/gi, '∞')
+  result = result.replace(/\\infty\b/g, '∞')
+
   return result
 }
 
@@ -183,7 +187,7 @@ function MathStepAnimator({ stepsRaw }: { stepsRaw: string }) {
     >
       <div className="flex items-center justify-between gap-2 mb-3 pb-2.5 border-b border-[var(--color-border,rgba(255,255,255,0.08))] text-xs font-semibold text-[var(--color-text-muted,#94a3b8)]">
         <span className="flex items-center gap-1.5 text-[var(--color-accent,#ff2d85)]">
-          <span>📐</span> Math Step Solver ({currentStep + 1}/{steps.length})
+          <Ruler size={13} /> Math Step Solver ({currentStep + 1}/{steps.length})
         </span>
         <div className="flex items-center gap-2">
           <button
@@ -326,9 +330,7 @@ function RichTableComponent({ tableRaw, hideBold = false }: { tableRaw: string; 
               {headerCells.map((h, i) => (
                 <th
                   key={i}
-                  className={`px-3.5 py-3 sm:px-4 sm:py-3.5 font-bold text-[var(--color-text-primary)] border-r last:border-r-0 border-[var(--color-border)] uppercase tracking-wider text-[11px] ${
-                    i === 0 ? 'sticky left-0 bg-[var(--color-surface-2)] z-10' : ''
-                  }`}
+                  className="px-3.5 py-3 sm:px-4 sm:py-3.5 font-bold text-[var(--color-text-primary)] border-r last:border-r-0 border-[var(--color-border)] uppercase tracking-wider text-[11px]"
                 >
                   <MathFormattedText text={h} hideBold={hideBold} />
                 </th>
@@ -345,7 +347,7 @@ function RichTableComponent({ tableRaw, hideBold = false }: { tableRaw: string; 
                   <td
                     key={cIdx}
                     className={`px-3.5 py-3 sm:px-4 sm:py-3.5 text-[var(--color-text-secondary,#cbd5e1)] border-r last:border-r-0 border-[var(--color-border)] text-xs sm:text-sm text-left ${
-                      cIdx === 0 ? 'sticky left-0 bg-[var(--color-surface-2)] z-10 font-medium' : ''
+                      cIdx === 0 ? 'font-medium' : ''
                     }`}
                   >
                     <MathFormattedText text={cell} hideBold={hideBold} />
@@ -602,7 +604,7 @@ export default function MathFormattedText({
   }
 
   // Regex to detect inline math expressions like $...$, \(...\), \[...\], \frac{...}{...}, or standalone LaTeX symbols
-  const INLINE_MATH_RE = /(\$\$[\s\S]*?\$\$|\$[^$\n]+\$|\\\[[\s\S]*?\\\]|\\\([^\n]*?\\\)|\\frac\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\\(?:sqrt|sum|int|lim|vec|hat|alpha|beta|gamma|delta|lambda|mu|pi|theta|sigma|omega|phi|approx|neq|pm|leq|geq|times|cdot|div)\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\\(?:frac|sqrt|sum|int|lim|vec|hat|alpha|beta|gamma|delta|lambda|mu|pi|theta|sigma|omega|phi|approx|neq|pm|leq|geq|times|cdot|div)(?=[^a-zA-Z]|$))/g
+  const INLINE_MATH_RE = /(\$\$[\s\S]*?\$\$|\$[^$\n]+\$|\\\[[\s\S]*?\\\]|\\\([^\n]*?\\\)|\\frac\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\\(?:sqrt|sum|prod|int|lim|vec|hat|bar|alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|kappa|lambda|mu|nu|xi|pi|rho|sigma|tau|upsilon|phi|chi|psi|omega|Gamma|Delta|Theta|Lambda|Xi|Pi|Sigma|Upsilon|Phi|Psi|Omega|approx|neq|pm|mp|le|ge|leq|geq|times|cdot|div|exists|forall|in|notin|subset|supset|cap|cup|partial|nabla)\b(?:\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|(?:\s*\([^)]*\))|\^\{?[^}\s]+\}?|_\{?[^}\s]+\}?|(?=[^a-zA-Z]|$))|\\(?:mathbf|mathrm|mathit|mathcal|mathbb|text)\{[^{}]*\}|\\(?:[A-Z][a-zA-Z]*)\([^)]*\))/g
 
   const renderChunkWithMath = (chunk: string, prefix: string): (string | React.ReactElement)[] => {
     if (!chunk) return []

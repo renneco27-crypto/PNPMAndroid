@@ -336,6 +336,10 @@ export function normalizeMathString(raw: string): string {
   s = s.replace(/sumof/gi, '\\sum ')
   s = s.replace(/Σ\s*m_i\s*x_i/g, '\\sum m_i x_i')
 
+  // Fix infinity notations and strip redundant grouping braces around \infty
+  s = s.replace(/\\?\{\s*\\?(?:inft?y|infinity)\s*\\?\}/gi, '\\infty')
+  s = s.replace(/(^|[^\\])\b(infty|infinity)\b/gi, '$1\\infty')
+
   // Clean invalid nested \text{ \frac{...}}
   s = s.replace(/\\text\{\s*\\frac\{([^}]+)\}\{([^}]+)\}\s*\}\^?(\d+|\{[^}]+\})?/g, (_m, num, den, exp) => {
     const expStr = exp ? `^{${String(exp).replace(/[{}]/g, '')}}` : ''
@@ -373,8 +377,10 @@ export function parseGivenItems(givenList: string[]): GivenLayout {
 
   const individualExprs: string[] = []
   givenList.forEach((entry) => {
-    const s = String(entry).trim()
+    let s = String(entry).trim()
     if (!s) return
+    s = s.replace(/\\?\{\s*\\?(?:inft?y|infinity)\s*\\?\}/gi, '\\infty')
+    s = s.replace(/(^|[^\\])\b(infty|infinity)\b/gi, '$1\\infty')
     const parts: string[] = []
     let depth = 0
     let curr = ''
@@ -403,7 +409,10 @@ export function parseGivenItems(givenList: string[]): GivenLayout {
     individualExprs.push(...parts)
   })
 
-  const parsed: ParsedGivenExpression[] = individualExprs.map((expr) => {
+  const parsed: ParsedGivenExpression[] = individualExprs.map((rawExpr) => {
+    const expr = rawExpr
+      .replace(/\\?\{\s*\\?(?:inft?y|infinity)\s*\\?\}/gi, '\\infty')
+      .replace(/(^|[^\\])\b(infty|infinity)\b/gi, '$1\\infty')
     const subMatch = expr.match(/_\{?([0-9a-zA-Z]+)\}?|(?<=[a-zA-Z])([0-9]+)/)
     const subscript = subMatch ? (subMatch[1] || subMatch[2]) : null
 
@@ -491,6 +500,11 @@ export function parseStepEquations(rawLatex: string): FormattedEqLine[] {
 
 function escapeUnbalancedSetBraces(tex: string): string {
   if (!tex || (!tex.includes('{') && !tex.includes('}'))) return tex
+  // Strip redundant grouping braces around single tokens like {\infty}, {\alpha}, {x}, etc.
+  tex = tex.replace(/\\?\{\s*\\?(?:inft?y|infinity)\s*\\?\}/gi, '\\infty')
+  tex = tex.replace(/\{\s*\\([a-zA-Z]+)\s*\}/g, '\\$1')
+  if (!tex.includes('{') && !tex.includes('}')) return tex
+
   let out = ''
   const stack: Array<'latex' | 'set'> = []
   let i = 0
@@ -504,7 +518,9 @@ function escapeUnbalancedSetBraces(tex: string): string {
     if (ch === '{') {
       const before = tex.slice(0, i)
       const isLatexArg = /(?:\\[a-zA-Z]+\s*|[_^]|\})\s*$/.test(before)
-      if (isLatexArg) {
+      const remaining = tex.slice(i)
+      const isGroupingOrMacro = /^\{\s*\\?[a-zA-Z0-9_^+.-]+\s*\}/.test(remaining)
+      if (isLatexArg || isGroupingOrMacro) {
         stack.push('latex')
         out += '{'
       } else {
@@ -1048,12 +1064,19 @@ export default function MathLabView({ deckTitle = 'Math Lab', onBack, cards, dec
         .mathlab-theme .grid .r {
           white-space: nowrap;
         }
-        .mathlab-theme .grid .l *,
-        .mathlab-theme .grid .e *,
-        .mathlab-theme .grid .r *,
-        .mathlab-theme .grid span {
+        .mathlab-theme .grid .l > span,
+        .mathlab-theme .grid .e > span,
+        .mathlab-theme .grid .r > span {
           overflow-x: visible !important;
           overflow-y: visible !important;
+          max-width: none !important;
+        }
+        .mathlab-theme .katex .hide-tail,
+        .mathlab-theme .grid .katex .hide-tail,
+        .katex .hide-tail {
+          overflow: hidden !important;
+          overflow-x: hidden !important;
+          overflow-y: hidden !important;
         }
         .mathlab-theme .pair {
           grid-template-columns: repeat(2, max-content max-content max-content);

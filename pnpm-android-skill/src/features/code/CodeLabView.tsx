@@ -1816,7 +1816,7 @@ export default function CodeLabView({
           flex-direction: column;
           border: 1px solid var(--line);
           border-top: 0;
-          border-radius: 0 0 14px 14px;
+          border-radius: 0;
           overflow: hidden;
           background: var(--card);
           animation: cdbi .25s ease both;
@@ -1827,8 +1827,8 @@ export default function CodeLabView({
         }
         .cd-code {
           flex: 1;
-          min-height: 220px;
-          max-height: 380px;
+          min-height: 180px;
+          max-height: none;
           overflow-y: auto;
           overflow-x: hidden;
           background: #0F1217;
@@ -1841,6 +1841,7 @@ export default function CodeLabView({
         .cd-ed {
           display: flex;
           min-height: 100%;
+          height: 100%;
         }
         .cd-gut {
           flex: none;
@@ -1858,7 +1859,8 @@ export default function CodeLabView({
         .cd-ta {
           flex: 1;
           width: 100%;
-          min-height: 200px;
+          min-height: 100%;
+          height: 100%;
           resize: none;
           border: 0;
           background: transparent;
@@ -1873,6 +1875,7 @@ export default function CodeLabView({
           outline: none;
         }
         .cd-keys {
+          flex: none;
           display: flex;
           gap: 6px;
           overflow-x: auto;
@@ -1905,6 +1908,7 @@ export default function CodeLabView({
           transform: scale(0.95);
         }
         .cd-out {
+          flex: none;
           font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
           font-size: 12.5px;
           padding: 10px 16px;
@@ -1919,9 +1923,10 @@ export default function CodeLabView({
         .cd-f { color: #FF7A72; }
         .cd-t { color: var(--text); margin-top: 4px; font-weight: 700; font-size: 13px; }
         .cd-sheet {
+          flex: none;
           background: var(--card);
           border-top: 1px solid var(--line);
-          padding: 14px 16px;
+          padding: 12px 16px max(calc(env(safe-area-inset-bottom, 0px) + 14px), 24px);
         }
         .cd-meta {
           display: flex;

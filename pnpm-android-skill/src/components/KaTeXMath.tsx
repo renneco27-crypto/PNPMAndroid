@@ -86,6 +86,10 @@ export function toLatex(raw: any): string {
   tex = tex.replace(/(^|[^\\])\b(tau|theta|alpha|beta|gamma|delta|epsilon|zeta|eta|iota|kappa|lambda|mu|nu|xi|pi|rho|sigma|upsilon|phi|chi|psi|omega)\b(?![\s]+[A-Za-z]{3,})/g, '$1\\$2')
   tex = tex.replace(/(^|[^\\])\b(Theta|Gamma|Delta|Lambda|Xi|Pi|Sigma|Upsilon|Phi|Psi|Omega)\b(?![\s]+[A-Za-z]{3,})/g, '$1\\$2')
 
+  // Fix infinity notations and strip redundant grouping braces around \infty
+  tex = tex.replace(/\\?\{\s*\\?(?:inft?y|infinity)\s*\\?\}/gi, '\\infty')
+  tex = tex.replace(/(^|[^\\])\b(infty|infinity)\b/gi, '$1\\infty')
+
   // 7. Fix unescaped quantifiers and relations
   tex = tex.replace(/(^|[^\\])\b(exists|forall)\b/g, '$1\\$2 ')
   tex = tex.replace(/(^|[^\\])\b(ge|le|leq|geq|neq|approx|cdot|times)\b(?![\s]+[A-Za-z]{3,})/g, '$1\\$2 ')
@@ -200,9 +204,18 @@ export default function KaTeXMath({ math, displayMode = false, className = '' }:
   }, [math, displayMode])
 
   return (
-    <span
-      className={`${displayMode ? 'block w-full' : 'inline-block align-middle'} select-text max-w-full overflow-x-auto overflow-y-hidden [overflow-wrap:anywhere] ${className}`}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <>
+      <span
+        className={`${displayMode ? 'block w-full' : 'inline-block align-middle'} select-text max-w-full overflow-x-auto overflow-y-hidden [overflow-wrap:anywhere] ${className}`}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+      <style jsx global>{`
+        .katex .hide-tail {
+          overflow: hidden !important;
+          overflow-x: hidden !important;
+          overflow-y: hidden !important;
+        }
+      `}</style>
+    </>
   )
 }
